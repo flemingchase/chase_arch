@@ -1,0 +1,38 @@
+# Required build tools and installer runtime
+base-devel
+python
+# Desktop and X11 session (managed by Ly)
+qtile
+xorg-server
+ly
+xorg-xauth
+xorg-xrandr
+xorg-xset
+xsel
+mesa
+# Applications used by the templates
+alacritty
+rofi
+pcmanfm-qt
+qutebrowser
+firefox
+zathura
+zathura-pdf-mupdf
+zsh
+gvim
+ttf-fira-mono
+adwaita-icon-theme
+# Audio and common desktop utilities
+pipewire
+pipewire-alsa
+pipewire-pulse
+wireplumber
+networkmanager
+network-manager-applet
+polkit
+lxqt-policykit
+file-roller
+lxqt-sudo
+fzf
+scrot
+git

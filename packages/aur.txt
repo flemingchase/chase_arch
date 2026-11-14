@@ -1,0 +1,4 @@
+# Optional applications from the template bundle, requiring an existing helper.
+clementine
+sioyek-git
+neovim-remote
