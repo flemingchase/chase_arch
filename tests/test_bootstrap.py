@@ -13,6 +13,17 @@ ROOT = Path(__file__).resolve().parents[1]
 BASH = shutil.which('bash')
 
 
+def is_arch_linux():
+    try:
+        release = Path('/etc/os-release').read_text().splitlines()
+    except OSError:
+        return False
+    return any(line in ('ID=arch', 'ID="arch"') for line in release)
+
+
+ARCH_LINUX = is_arch_linux()
+
+
 class BootstrapTests(unittest.TestCase):
     def script(self, path, body):
         path.write_text(f'#!{BASH}\nset -eu\n' + body)
@@ -34,6 +45,7 @@ class BootstrapTests(unittest.TestCase):
         return commands, environment
 
     @unittest.skipIf(os.geteuid() == 0, 'The entry script intentionally refuses root installation')
+    @unittest.skipUnless(ARCH_LINUX, 'The entry script intentionally rejects non-Arch hosts')
     def test_missing_python_is_installed_before_python_launch(self):
         with tempfile.TemporaryDirectory() as directory:
             commands, environment = self.environment(directory)
@@ -47,6 +59,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertIn('python: ./install.py --packages-only mode=sudo', log)
 
     @unittest.skipIf(os.geteuid() == 0, 'The entry script intentionally refuses root installation')
+    @unittest.skipUnless(ARCH_LINUX, 'The entry script intentionally rejects non-Arch hosts')
     def test_base_only_system_uses_su_and_keeps_it_for_later_steps(self):
         with tempfile.TemporaryDirectory() as directory:
             commands, environment = self.environment(directory)
@@ -60,6 +73,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertIn('mode=su', log)
 
     @unittest.skipIf(os.geteuid() == 0, 'The entry script intentionally refuses root installation')
+    @unittest.skipUnless(ARCH_LINUX, 'The entry script intentionally rejects non-Arch hosts')
     def test_bootstrap_failure_does_not_launch_python(self):
         with tempfile.TemporaryDirectory() as directory:
             commands, environment = self.environment(directory)
