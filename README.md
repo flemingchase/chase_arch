@@ -1,5 +1,15 @@
 # chase_arch
 
+> [!NOTE]
+> **Vibe-coding disclaimer:** this project was "vibe coded" with OpenAI Codex.
+> Review and test the code and configuration before relying on it.
+
+> [!WARNING]
+> **Experimental:** this installer has not yet completed an end-to-end run in
+> a disposable, freshly installed Arch Linux virtual machine. Review the
+> package lists and configuration changes, run `./install.sh --dry-run` first,
+> and keep a recoverable backup before using it on a real system.
+
 Set up Chase's Qtile/X11 desktop on an already installed Arch Linux system,
 then restore the bundled application configurations. The repository includes
 the template files, so the target computer does not need another checkout.
@@ -135,11 +145,17 @@ Ly service setup, prerequisite bootstrapping without Python, sudo/su selection,
 bootstrap failures and invalid Firefox profiles.
 Package names were checked against the development machine's Arch repository
 database. A complete fresh-Arch virtual-machine install and interactive desktop
-check are still required before calling this a tested release.
+check are still required before removing the experimental label.
 
 The initial template snapshot came from `template_config` on 2026-11-10.
-Your original template directory is unchanged. Bundled Vim plugins retain
-their upstream licenses. Choose a license for the project before public release.
+Your original template directory is unchanged.
+
+## License
+
+Original chase_arch code, documentation and configuration files are released
+under the [Zero-Clause BSD license](LICENSE). Bundled Vim plugins and the
+wallpaper retain their upstream terms; see
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ## References
 
