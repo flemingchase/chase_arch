@@ -63,19 +63,18 @@ endfunction
 
 
 function! vimtex#view#inverse_search(line, filename, column = 0) abort
-  " Only activate in VimTeX buffers
-  if !exists('b:vimtex') | return -1 | endif
+  " Only activate if there are any VimTeX projects in this instance
+  let l:states = vimtex#state#list_all()
+  if empty(l:states) | return -1 | endif
 
-  " Only activate in relevant VimTeX projects
+  " Only activate for a project that owns the file. Note that the project need
+  " not be the one of the current buffer.
   let l:file = resolve(a:filename)
-  let l:sources = b:vimtex.get_sources(#{ refresh: v:true })
-  if vimtex#paths#is_abs(l:file)
-    call map(l:sources, {_, x -> vimtex#paths#join(b:vimtex.root, x)})
-  endif
-  if index(l:sources, l:file) < 0 | return -2 | endif
+  let l:state = s:get_state_for_file(l:states, l:file)
+  if empty(l:state) | return -2 | endif
 
 
-  if mode() ==# 'i' | stopinsert | endif
+  if mode() =~# '^[it]' | stopinsert | endif
 
   " Open file if necessary
   if !bufloaded(l:file)
@@ -97,24 +96,26 @@ function! vimtex#view#inverse_search(line, filename, column = 0) abort
     endif
   endif
 
-  " Get buffer, window, and tab numbers
-  " * If tab/window exists, switch to it/them
   let l:bufnr = bufnr(l:file)
-  try
-    let [l:winid; _] = win_findbuf(l:bufnr)
-    let [l:tabnr, l:winnr] = win_id2tabwin(l:winid)
-    execute l:tabnr . 'tabnext'
-    execute l:winnr . 'wincmd w'
-  catch
-    execute g:vimtex_view_reverse_search_edit_cmd l:file
-  endtry
+  let l:bufnr_current = bufnr()
+  if l:bufnr != l:bufnr_current
+    " Switch to the right tab + window if we can find them
+    try
+      let [l:winid; _] = win_findbuf(l:bufnr)
+      let [l:tabnr, l:winnr] = win_id2tabwin(l:winid)
+      execute l:tabnr . 'tabnext'
+      execute l:winnr . 'wincmd w'
+    catch
+      execute g:vimtex_view_reverse_search_edit_cmd l:file
+    endtry
+  endif
 
   execute 'normal!' a:line . 'G'
   if a:column > 0
     execute 'normal!' a:column . '|'
   endif
-  if b:vimtex.viewer.xdo_check()
-    call b:vimtex.viewer.xdo_focus_vim()
+  if has_key(l:state, 'viewer') && l:state.viewer.xdo_check()
+    call l:state.viewer.xdo_focus_vim()
   endif
   redraw
 
@@ -143,6 +144,25 @@ function! vimtex#view#inverse_search_cmd(line, filename, column) abort
 endfunction
 
 
+function! s:get_state_for_file(states, file) abort
+  " The project of the current buffer is checked first, since it is the most
+  " common owner.
+  let l:states = exists('b:vimtex')
+        \ ? [b:vimtex] + filter(copy(a:states), 'v:val isnot b:vimtex')
+        \ : a:states
+
+  for l:state in l:states
+    let l:sources = l:state.get_sources(#{ refresh: v:true })
+    if vimtex#paths#is_abs(a:file)
+      call map(l:sources, {_, x -> vimtex#paths#join(l:state.root, x)})
+    endif
+    if index(l:sources, a:file) >= 0 | return l:state | endif
+  endfor
+
+  return {}
+endfunction
+
+
 function! s:inverse_search_cmd_nvim(line, filename, column) abort
   if !filereadable(s:nvim_servernames) | return | endif
 
@@ -150,6 +170,7 @@ function! s:inverse_search_cmd_nvim(line, filename, column) abort
     try
       let l:socket = sockconnect('pipe', l:server, {'rpc': 1})
     catch
+      continue
     endtry
 
     call rpcnotify(l:socket,
@@ -162,9 +183,15 @@ endfunction
 
 function! s:inverse_search_cmd_vim(line, filename, column) abort
   for l:server in split(serverlist(), "\n")
-    call remote_expr(l:server,
-          \ printf("vimtex#view#inverse_search(%d, '%s', %d)",
-          \        a:line, a:filename, a:column))
+    " Catch errors per server so that one failure does not stop the loop. E.g.,
+    " sending to our own server fails with E241 if the vimrc calls
+    " remote_startserver().
+    try
+      call remote_expr(l:server,
+            \ printf("vimtex#view#inverse_search(%d, '%s', %d)",
+            \        a:line, a:filename, a:column))
+    catch
+    endtry
   endfor
 endfunction
 

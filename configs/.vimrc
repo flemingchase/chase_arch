@@ -14,20 +14,21 @@ set autoindent
 set number
 set wildmode=longest,list
 set textwidth=79
-set cc=+1
+set cc=80
+set relativenumber
 set formatoptions+=t
 set mouse=a
 set clipboard=unnamedplus
 set cursorline
 set ttyfast
 set noswapfile
-set conceallevel=1
-set wrap
+set conceallevel=0
+set nowrap
 set splitright
 
 let maplocalleader=","
-noremap <LocalLeader>s :split<CR>
-noremap <LocalLeader>v :vsplit<CR>
+noremap <LocalLeader>sh :split<CR>
+noremap <LocalLeader>sv :vsplit<CR>
 noremap <silent> <c-h> <c-w>h
 noremap <silent> <c-j> <c-w>j
 noremap <silent> <c-k> <c-w>k
@@ -39,12 +40,18 @@ autocmd BufWritePre * keeppatterns %s/\s\+$//e
 highlight QuickFixLine gui=bold,underline cterm=bold,
             \underline guibg=NONE ctermbg=NONE guifg=NONE
 
+augroup ColumnExceptions
+  autocmd!
+  autocmd FileType markdown,text,tex,plaintex setlocal colorcolumn= textwidth=0
+augroup END
+
 if empty(v:servername) && exists('*remote_startserver')
       call remote_startserver('VIM')
 endif
 
+" Vimtex settings
 autocmd ColorScheme * highlight link texMathOper Normal
-let maplocalleader =","
+noremap <LocalLeader>lC :VimtexClean!<CR>
 let g:tex_flavor='latex'
 let g:vimtex_view_method = 'zathura'
 let g:vimtex_view_use_temp_files = 1
@@ -57,8 +64,12 @@ let g:vimtex_compiler_latexmk = {
       \   '-interaction=nonstopmode',
       \ ],
       \}
+let g:vimtex_quickfix_ignore_filters = ['Underfull', 'Overfull',]
 
-let g:airline_theme='base16'
+" Airline-theme
+let g:airline_theme='minimalist'
+
+" Plugins
 call plug#begin()
 " Make sure you use single quotes
 Plug 'lervag/vimtex'

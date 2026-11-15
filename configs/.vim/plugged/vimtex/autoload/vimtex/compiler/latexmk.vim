@@ -91,6 +91,7 @@ let s:compiler = vimtex#compiler#_template#new({
       \ 'name' : 'latexmk',
       \ 'aux_dir': '',
       \ 'callback' : 1,
+      \ 'clean_ext': '',
       \ 'continuous': 1,
       \ 'executable' : 'latexmk',
       \ 'options' : [
@@ -102,8 +103,11 @@ let s:compiler = vimtex#compiler#_template#new({
       \})
 
 function! s:compiler.__check_requirements() abort dict " {{{1
-  if !executable(self.executable)
-    call vimtex#log#warning(self.executable . ' is not executable')
+  if !self._is_executable_available()
+    let l:exe = type(self.executable) == v:t_list
+          \ ? self.executable[0]
+          \ : self.executable
+    call vimtex#log#warning(l:exe . ' is not executable')
     let self.enabled = v:false
   endif
 endfunction
@@ -135,7 +139,7 @@ endfunction
 function! s:compiler.__build_cmd(passed_options) abort dict " {{{1
   let l:cmd = (has('win32')
         \ ? 'set max_print_line=2000 & '
-        \ : 'max_print_line=2000 ') . self.executable
+        \ : 'max_print_line=2000 ') . self._get_executable_string()
 
   let l:cmd .= ' ' . join(self.options) . a:passed_options
   let l:cmd .= ' ' . self.get_engine()
@@ -153,9 +157,14 @@ function! s:compiler.__build_cmd(passed_options) abort dict " {{{1
     let l:cmd .= ' -pvc -pvctimeout- -view=none'
 
     if self.callback
+      " Note: `warning_cmd` is deliberately mapped to the success callback.
+      "       latexmk only runs `success_cmd` when there were no warnings at
+      "       all, so without this a compilation that ends with e.g. undefined
+      "       references would never issue a callback.
       for [l:opt, l:val] in [
             \ ['compiling_cmd', 'vimtex_compiler_callback_compiling'],
             \ ['success_cmd', 'vimtex_compiler_callback_success'],
+            \ ['warning_cmd', 'vimtex_compiler_callback_success'],
             \ ['failure_cmd', 'vimtex_compiler_callback_failure'],
             \]
         let l:cmd .= s:wrap_option_appendcmd(l:opt, 'echo ' . l:val)
@@ -183,27 +192,25 @@ endfunction
 
 " }}}1
 
+function! s:compiler._output_roots() abort dict " {{{1
+  return [
+        \ $VIMTEX_OUTPUT_DIRECTORY,
+        \ self.aux_dir,
+        \ self.out_dir,
+        \ self.file_info.root,
+        \]
+endfunction
+
+" }}}1
 function! s:compiler.get_file(ext) abort dict " {{{1
   if g:vimtex_view_use_temp_files
         \ && index(['pdf', 'synctex.gz'], a:ext) >= 0
     return self.__get_temp_file(a:ext)
   endif
 
-  for l:root in [
-        \ $VIMTEX_OUTPUT_DIRECTORY,
-        \ self.aux_dir,
-        \ self.out_dir,
-        \ self.file_info.root
-        \]
-    if empty(l:root) | continue | endif
-
-    let l:cand = printf('%s/%s.%s', l:root, self.file_info.jobname, a:ext)
-    if !vimtex#paths#is_abs(l:root)
-      let l:cand = self.file_info.root . '/' . l:cand
-    endif
-
+  for l:cand in self._get_file_candidates(a:ext)
     if filereadable(l:cand)
-      return fnamemodify(l:cand, ':p')
+      return l:cand
     endif
   endfor
 
@@ -227,7 +234,15 @@ endfunction
 function! s:compiler.clean(full) abort dict " {{{1
   call self.__clean_temp_files(a:full)
 
-  let l:cmd = self.executable
+  let l:cmd = self._get_executable_string()
+
+  if !empty(self.clean_ext)
+        \ && vimtex#compiler#latexmk#get_rc_opt(
+        \      self.file_info.root, 'clean_ext', 0, -1)[1] == -1
+    let l:cmd .= ' -e '
+          \ . vimtex#util#shellescape('$clean_ext = q/' . self.clean_ext . '/;')
+  endif
+
   let l:cmd .= a:full ? ' -C' : ' -c'
 
   if !empty(self.out_dir)

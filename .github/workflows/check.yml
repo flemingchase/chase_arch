@@ -8,5 +8,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
+      - name: Install shell validation dependency
+        run: sudo apt-get update -qq && sudo apt-get install --no-install-recommends --yes zsh
       - run: bash -n install.sh
       - run: python -m unittest discover -s tests -v
+      - run: sh -n configs/.xinitrc
+      - name: Test bundled templates
+        working-directory: configs
+        run: python -m unittest discover -s tests -v
+      - name: Test bundled chthm
+        working-directory: vendor/chthm
+        run: PYTHONPATH=src python -m unittest discover -s tests -v

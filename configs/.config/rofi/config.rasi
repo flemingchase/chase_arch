@@ -1,5 +1,5 @@
 configuration {
-font: "Fira Mono 22";
+font: "fira-mono 22";
 location: 2;
 eh: 1;
 yoffset: 200;

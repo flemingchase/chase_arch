@@ -94,6 +94,70 @@ class BootstrapTests(unittest.TestCase):
                 self.assertFalse(Path(environment['LOG']).exists())
                 self.assertFalse((Path(environment['BIN']) / 'python3').exists())
 
+    def test_invalid_arguments_fail_before_python_or_privileged_commands(self):
+        invalid = [
+            ['--configs-only', '--packages-only'],
+            ['--packages-only', '--configs-only'],
+            ['--aur-helper', 'yay', '--no-aur'],
+            ['--no-aur', '--aur-helper=paru'],
+            ['--home', '/tmp/staging'],
+            ['--dry-run', '--home=/tmp/staging'],
+            ['--packages-only', '--firefox-profile', '/tmp/profile'],
+            ['--packages-only', '--librewolf-profile=/tmp/profile'],
+            ['--packages-only', '--offline-themes'],
+            ['--configs-only', '--aur-helper', 'yay'],
+            ['--configs-only', '--no-aur'],
+            ['--configs-only', '--enable-network'],
+            ['--configs-only', '--zsh'],
+            ['--aur-helper', 'invalid'],
+            ['--aur-helper=invalid'],
+            ['--unknown'],
+        ]
+        for option in ('--home', '--firefox-profile', '--librewolf-profile', '--aur-helper'):
+            invalid.extend(([option], [option, ''], [option + '='], [option, '--dry-run']))
+        for python_available in (False, True):
+            for arguments in invalid:
+                with self.subTest(python_available=python_available, arguments=arguments), \
+                        tempfile.TemporaryDirectory() as directory:
+                    commands, environment = self.environment(directory)
+                    if python_available:
+                        (commands / 'python3').symlink_to(environment['FAKE_PYTHON'])
+                    for command in ('sudo', 'su'):
+                        self.script(commands / command,
+                                    'printf "unexpected privilege request\\n" >> "$LOG"\nexit 70\n')
+                    result = subprocess.run([BASH, str(ROOT / 'install.sh'), *arguments],
+                                            env=environment, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertIn('chase_arch:', result.stderr)
+                    self.assertFalse(Path(environment['LOG']).exists())
+                    self.assertEqual((commands / 'python3').exists(), python_available)
+
+    def test_valid_profile_and_staging_arguments_reach_python_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands, environment = self.environment(directory)
+            self.script(commands / 'python3', 'printf "<%s>\\n" "$@" >> "$LOG"\n')
+            arguments = ['--configs-only', '--home', '/tmp/staging home',
+                         '--firefox-profile=/tmp/firefox profile',
+                         '--librewolf-profile', '/tmp/librewolf profile',
+                         '--offline-themes', '--dry-run']
+            result = subprocess.run([BASH, str(ROOT / 'install.sh'), *arguments],
+                                    env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(Path(environment['LOG']).read_text().splitlines(),
+                             ['<./install.py>', *[f'<{argument}>' for argument in arguments]])
+
+    def test_valid_package_options_preview_without_python(self):
+        for arguments in (['--aur-helper=paru'], ['--no-aur'], ['--packages-only'],
+                          ['--offline-themes', '--enable-network', '--zsh']):
+            with self.subTest(arguments=arguments), tempfile.TemporaryDirectory() as directory:
+                commands, environment = self.environment(directory)
+                result = subprocess.run([BASH, str(ROOT / 'install.sh'), '--dry-run', *arguments],
+                                        env=environment, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('Preview complete; nothing changed.', result.stdout)
+                self.assertFalse(Path(environment['LOG']).exists())
+                self.assertFalse((commands / 'python3').exists())
+
     def test_python_system_commands_use_selected_su_even_after_sudo_is_installed(self):
         with patch.dict(os.environ, {'CHASE_ARCH_PRIVILEGE': 'su'}), \
                 patch.object(installer.subprocess, 'run') as run, \

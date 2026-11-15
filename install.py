@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install Chase's Qtile/X11 desktop and bundled template configurations."""
+"""Install the desktop, bundled application defaults, and chthm in one pass."""
 import argparse
 import os
 from pathlib import Path
@@ -9,6 +9,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
+
+from browser_profiles import ensure_profiles_closed, plan_profiles, prepare_profiles
 
 ROOT = Path(__file__).resolve().parent
 YAY_URL = 'https://aur.archlinux.org/yay.git'
@@ -29,7 +32,7 @@ def packages(filename):
     return result
 
 
-def run(command, dry_run, cwd=None):
+def run(command, dry_run, cwd=None, env=None):
     if command[0] == 'sudo' and (os.environ.get('CHASE_ARCH_PRIVILEGE') == 'su' or not shutil.which('sudo')):
         command = ['su', '-c', shlex.join(map(str, command[1:]))]
     location = f' (in {cwd})' if cwd is not None else ''
@@ -38,7 +41,87 @@ def run(command, dry_run, cwd=None):
         options = {'check': True}
         if cwd is not None:
             options['cwd'] = cwd
+        if env is not None:
+            options['env'] = env
         subprocess.run(command, **options)
+
+
+def target_environment(home=None):
+    """Keep every user-level subprocess in the requested destination home."""
+    env = os.environ.copy()
+    if home is not None:
+        home = home.expanduser().absolute()
+        env.update(HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'),
+                   XDG_DATA_HOME=str(home / '.local/share'),
+                   XDG_STATE_HOME=str(home / '.local/state'),
+                   XDG_CACHE_HOME=str(home / '.cache'), ZDOTDIR=str(home))
+    return env
+
+
+def user_paths(env):
+    home = Path(env['HOME']).expanduser().absolute()
+    config = Path(env.get('XDG_CONFIG_HOME') or home / '.config').expanduser().absolute()
+    data = Path(env.get('XDG_DATA_HOME') or home / '.local/share').expanduser().absolute()
+    return home, config, data
+
+
+def validate_bundle():
+    required = ['configs/install.py', 'configs/.xinitrc',
+                'configs/firefox-profile/user.js', 'configs/librewolf-profile/user.js',
+                'vendor/chthm/install.py', 'vendor/chthm/chthm.zsh',
+                'vendor/chthm/src/chthm/cli.py', 'vendor/chthm/themes/gotham.toml',
+                'vendor/chthm/themes/kimbie_dark.toml',
+                'vendor/chthm/themes/alacritty-theme.LICENSE', 'tools/su_exec.py']
+    for relative in required:
+        if not (ROOT / relative).is_file():
+            raise ValueError(f'Incomplete installer download: missing {relative}')
+    for filename in (ROOT / 'vendor/chthm/themes').glob('*.toml'):
+        colors = tomllib.loads(filename.read_text())['colors']['primary']
+        if not all(re.fullmatch(r'#[0-9a-fA-F]{6}', colors[key])
+                   for key in ('background', 'foreground')):
+            raise ValueError(f'Invalid bundled palette: {filename.name}')
+
+
+def template_command(home=None, profiles=None):
+    command = [sys.executable, str(ROOT / 'configs/install.py')]
+    if home is not None:
+        command += ['--home', str(home.expanduser().absolute())]
+    for application, profile in (profiles or {}).items():
+        command += [f'--{application}-profile', str(profile)]
+    return command
+
+
+def install_chthm(env, profiles, dry_run, offline_themes=False):
+    home, _, data = user_paths(env)
+    source = ROOT / 'vendor/chthm'
+    collection = data / 'chthm/themes'
+    # Seed missing bundled themes first; Gotham remains available if the
+    # optional upstream catalogue download fails. Existing custom themes stay.
+    for filename in sorted((source / 'themes').iterdir()):
+        destination = collection / filename.name
+        if destination.exists():
+            continue
+        if dry_run:
+            print(f'Would seed bundled theme: {destination}')
+        else:
+            collection.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(filename, destination)
+    command = [sys.executable, str(source / 'install.py')]
+    if offline_themes:
+        command += ['--theme-source', str(source / 'themes')]
+    run(command, dry_run, env=env)
+    command = [str(home / '.local/bin/chthm'), 'gotham', '--no-reload']
+    for application, profile in profiles.items():
+        command += [f'--{application}-profile', str(profile)]
+    run(command, dry_run, env=env)
+
+
+def aur_command(helper, names):
+    command = [helper]
+    if os.environ.get('CHASE_ARCH_PRIVILEGE') == 'su' or not shutil.which('sudo'):
+        command += ['--sudo', str(ROOT / 'tools/su_exec.py'), '--sudoflags=',
+                    '--sudoloop=false' if helper == 'yay' else '--nosudoloop']
+    return [*command, '-S', '--needed', '--', *names]
 
 
 def install_yay(dry_run):
@@ -85,10 +168,12 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run', action='store_true', help='Preview without writing or installing anything')
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument('--configs-only', action='store_true', help='Only restore bundled user configurations')
-    mode.add_argument('--packages-only', action='store_true', help='Install packages and configure Ly without copying user settings')
+    mode.add_argument('--configs-only', action='store_true', help='Restore user configurations and install chthm without installing packages')
+    mode.add_argument('--packages-only', action='store_true', help='Install packages and configure Ly without restoring settings or installing chthm')
     parser.add_argument('--home', type=Path, help='Staging home; requires --configs-only')
-    parser.add_argument('--firefox-profile', type=Path, help='Existing Firefox profile for the optional overlay')
+    parser.add_argument('--firefox-profile', type=Path, help='Choose an existing Firefox profile instead of discovering or initializing one')
+    parser.add_argument('--librewolf-profile', type=Path, help='Choose an existing LibreWolf profile instead of discovering or initializing one')
+    parser.add_argument('--offline-themes', action='store_true', help='Use bundled Gotham and Kimbie Dark themes without downloading the upstream catalogue')
     aur_mode = parser.add_mutually_exclusive_group()
     aur_mode.add_argument('--aur-helper', choices=('yay', 'paru'),
                           help='AUR helper to use; defaults to yay, which is installed when missing')
@@ -100,11 +185,14 @@ def main(argv=None):
         parser.error('--home requires --configs-only')
     if args.configs_only and (args.aur_helper or args.no_aur or args.enable_network or args.zsh):
         parser.error('--configs-only cannot be combined with system setup options')
-    if args.packages_only and args.firefox_profile:
-        parser.error('--firefox-profile cannot be combined with --packages-only')
+    if args.packages_only and (args.firefox_profile or args.librewolf_profile or args.offline_themes):
+        parser.error('Browser profile and theme options cannot be combined with --packages-only')
     try:
         if not args.dry_run and os.geteuid() == 0:
             raise ValueError('Run as your normal desktop user, without sudo. Only package/system commands use sudo.')
+        validate_bundle()
+        env = target_environment(args.home)
+        home, config, _ = user_paths(env)
         official = packages(ROOT / 'packages/official.txt') if not args.configs_only else []
         aur_helper = args.aur_helper or 'yay'
         aur = packages(ROOT / 'packages/aur.txt') if not args.configs_only and not args.no_aur else []
@@ -121,14 +209,21 @@ def main(argv=None):
                 raise ValueError('System changes require sudo or su with a root password.')
             if aur_helper != 'yay' and not shutil.which(aur_helper):
                 raise ValueError(f'Install {aur_helper} first, use the default yay helper, or pass --no-aur.')
-        config_command = [sys.executable, str(ROOT / 'configs/install.py')]
-        if args.home is not None:
-            config_command += ['--home', str(args.home.expanduser().absolute())]
-        if args.firefox_profile:
-            config_command += ['--firefox-profile', str(args.firefox_profile.expanduser().absolute())]
+        plans = []
         if not args.packages_only:
-            # Validate destination layout before installing any packages or files.
-            check = subprocess.run(config_command + ['--dry-run'], capture_output=True, text=True)
+            applications = [name for name in ('firefox', 'librewolf')
+                            if name in official or shutil.which(name)
+                            or getattr(args, name + '_profile') is not None]
+            plans = plan_profiles(home, config, applications=applications,
+                                  firefox_profile=args.firefox_profile,
+                                  librewolf_profile=args.librewolf_profile)
+            if not args.dry_run:
+                ensure_profiles_closed(plans)
+            existing = {plan.application: plan.path for plan in plans if not plan.create}
+            # Check the template and existing-profile destinations before packages.
+            # Fresh profiles are initialized only after their browser is installed.
+            check = subprocess.run(template_command(args.home, existing) + ['--dry-run'],
+                                   capture_output=True, text=True, env=env)
             if check.returncode:
                 raise ValueError(check.stderr.strip())
         if official:
@@ -137,12 +232,21 @@ def main(argv=None):
         if aur:
             if aur_helper == 'yay':
                 install_yay(args.dry_run)
-            run([aur_helper, '-S', '--needed', '--', *aur], args.dry_run)
+            run(aur_command(aur_helper, aur), args.dry_run)
         if not args.packages_only:
+            profiles = prepare_profiles(plans, dry_run=args.dry_run, env=env)
             if args.dry_run:
                 print(check.stdout, end='')
+                for plan in plans:
+                    if plan.create:
+                        print(f'Would apply {plan.application} overlay to its newly initialized default profile')
             else:
-                run(config_command, False)
+                ready = plan_profiles(home, config, applications=list(profiles),
+                                      firefox_profile=profiles.get('firefox'),
+                                      librewolf_profile=profiles.get('librewolf'))
+                ensure_profiles_closed(ready)
+                run(template_command(args.home, profiles), False, env=env)
+            install_chthm(env, profiles, args.dry_run, args.offline_themes)
         if not args.configs_only:
             configure_ly(args.dry_run)
         if args.enable_network:
@@ -153,9 +257,11 @@ def main(argv=None):
             print('Skipped yay and optional AUR packages (--no-aur).')
         if not args.configs_only:
             print('After a successful install, reboot and select the xinitrc session in Ly to launch Qtile.')
+        if not args.packages_only:
+            print('Default theme: Gotham. After installation, open a new zsh terminal to use chthm shell integration.')
         print('Preview complete; nothing changed.' if args.dry_run else 'Installation complete.')
         return 0
-    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
         print(f'chase_arch: {error}', file=sys.stderr)
         return 1
 

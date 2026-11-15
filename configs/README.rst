@@ -1,25 +1,39 @@
 Standalone application templates
 ================================
 
+.. note::
+
+   **Vibe-coding disclaimer:** this project was "vibe coded" with OpenAI Codex.
+   Review and test the code and configuration before relying on it.
+
 This bundle contains portable copies of the current application configurations
-for Alacritty, Zathura, Rofi, Firefox, Clementine, Sioyek, PCManFM-Qt, Qtile and
-qutebrowser, together with the zsh and Vim setup. Colors are fixed values in the files. The copied configurations
+for Alacritty, Zathura, Rofi, Firefox, LibreWolf, Clementine, Sioyek,
+PCManFM-Qt, Qtile and qutebrowser, together with the zsh and Vim setup, the Ly login-manager
+configuration, and the active Plymouth boot-splash theme. Application colors are
+fixed to the Gotham palette, matching the colors selected by ``chthm gotham``:
+background ``#0a0f14``, foreground ``#98d1ce``, and its full normal/bright palette.
+The copied configurations
 have no chthm references, palette environment variables or dependency on a
 separate theme-switching program.
 
-The bundle was prepared from the active settings without changing the active
-files. The portability notes below describe the copied settings.
+The bundle was refreshed from the active settings on 2026-11-14 without
+changing the active files. The portability notes below describe the copied settings.
 
 Layout
 ------
 
 * .config/: application settings, including Qtile's widget and wallpaper.
 * .zshrc: shell preferences and functions, with theme integration removed.
-* .xinitrc: executable shell script that launches only Qtile on X11 for Ly.
 * .vimrc and .vim/: Vim settings, custom TeX syntax, plugins and plugin manager.
-* .local/bin/pcmanfm-themed: an independent fixed-stylesheet launcher.
+* .config/qt6ct/: the standalone Gotham palette for Qt 6 applications.
+* .config/environment.d/60-qt6ct.conf: selects the Qt 6 palette plugin.
+* .local/bin/pcmanfm-themed: an independent launcher selecting the Qt 6 palette.
 * .local/share/applications/pcmanfm-qt.desktop: a matching application entry.
-* firefox-profile/: stylesheet and preference files for a destination profile.
+* firefox-profile/: stylesheet and preference files for a Firefox profile.
+* librewolf-profile/: stylesheet and preference files for a LibreWolf profile.
+* etc/ly/config.ini: system-wide Ly login-manager settings (manual restore).
+* etc/plymouth/plymouthd.conf: Plymouth daemon settings selecting the bundled theme.
+* usr/share/plymouth/themes/arch-boot-dots/: active Plymouth theme, artwork and license.
 * install.py: optional restore helper with dry-run support and backups.
 
 Dot-prefixed directories may be hidden by your file manager. Keep them when
@@ -37,10 +51,11 @@ Python's standard library and does not download or install packages.
 
 Required applications:
 
-* alacritty, zathura with a PDF plugin, rofi and firefox.
-* clementine, pcmanfm-qt, qtile and qutebrowser.
+* alacritty, zathura with a PDF plugin, rofi and Firefox and/or LibreWolf.
+* clementine, pcmanfm-qt, qtile, qutebrowser and qt6ct.
 * sioyek, with the documented interface-color options; the source machine
   uses sioyek-git.
+* plymouth for the bundled arch-boot-dots boot-splash theme.
 
 Supporting components:
 
@@ -69,7 +84,8 @@ Then restore the settings for your normal account, without sudo::
 
 This copies .config, .local and the shell/Vim dotfiles, uses your HOME and XDG configuration/data
 locations, and writes the PCManFM-Qt desktop entry with the correct launcher
-path for the destination account. It preserves existing dotfile symlinks and
+path for the destination account. It also resolves the qt6ct color-scheme path
+to the destination configuration directory. It preserves existing dotfile symlinks and
 creates unique .template-backup-* files before replacing changed files.
 Repeated installation skips unchanged files. No applications are restarted.
 .zshrc goes to $ZDOTDIR/.zshrc if ZDOTDIR is set; otherwise it goes to ~/.zshrc.
@@ -82,29 +98,92 @@ For staging under a different destination home::
 
 With --home, configuration and data go under that home's .config and
 .local/share rather than inheriting the current account's XDG overrides.
-The helper also copies an executable .xinitrc for Ly's xinitrc session.
-The top-level chase_arch installer installs and enables Ly. This restore helper
-does not configure audio, networking, the login shell, file associations or
-system services.
+The helper does not set up Qtile as a login session or configure audio,
+networking, shell preferences, file associations or system services.
 
-Firefox needs a profile overlay
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Firefox and LibreWolf profile overlays
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Start Firefox once on the new installation so it creates a profile. Find its
-Profile Directory on about:support, then close Firefox. Restore with that
-existing directory selected::
+Start each browser you want to configure once on the new installation so it
+creates a profile. Find its Profile Directory on about:support, then close the
+browser. Restore Firefox with its existing directory selected::
 
     python3 install.py --firefox-profile /path/to/actual/firefox/profile --dry-run
     python3 install.py --firefox-profile /path/to/actual/firefox/profile
 
-This adds chrome/userChrome.css and user.js to that profile, with backups.
-It does not copy the source machine's profile identifiers, cookies, passwords,
-browsing history, extensions or accounts. The Firefox template contains the
-browser appearance rules and the preference enabling custom stylesheets.
+Restore LibreWolf with its own existing directory selected::
 
-Without --firefox-profile, the helper skips the overlay and tells you so.
-Firefox's profile location is installation-specific; see
+    python3 install.py --librewolf-profile /path/to/actual/librewolf/profile --dry-run
+    python3 install.py --librewolf-profile /path/to/actual/librewolf/profile
+
+The options can be combined to configure both browsers in one run. Each adds
+``chrome/userChrome.css``, ``chrome/userContent.css`` and ``user.js`` to only
+the selected profile, with backups. They do not copy the source machine's
+profile identifiers, cookies, passwords, browsing history, extensions or
+accounts.
+
+Both browser templates use Gotham: ``#0a0f14`` for
+the background and ``#98d1ce`` for the foreground. Horizontal tabs are square,
+gapless boxes with one-pixel foreground borders. Their 18-pixel minimum height
+is half of Firefox 160's current 36-pixel default; the label line height and
+close/audio controls are reduced with it so they do not force the tabs taller.
+Custom browser stylesheets are enabled. The Settings page
+(``about:preferences``) also uses that background and foreground for its
+canvas, cards, dialogs, inputs and text instead of Firefox's or LibreWolf's
+built-in dark gray surfaces. Browser context menus and popup panels use the
+same palette for their surfaces, text, icons, borders and separators. Hovered
+or keyboard-active menu rows invert the foreground and background pair. Tabs,
+address and search fields, toolbar buttons, panels, menu rows, Settings cards,
+dialogs, inputs and buttons all use square zero-radius corners. The toolbar
+address/search field, its autocomplete and search-engine result rows, and the
+search field on ``about:newtab`` and ``about:home`` all use the fixed palette;
+selected or hovered results invert that foreground/background pair.
+
+Each overlay also includes its current native toolbar button and spacer
+arrangement, sidebar tool order and hide-on-close behavior. Firefox uses
+125% interface scaling, a 20px default proportional text size, and a sparse
+New Tab page with its logo, search, shortcuts, stories and widgets hidden.
+LibreWolf retains its own scaling and text-size defaults. Extension-specific
+buttons and machine-specific window dimensions are omitted from the overlays.
+These preferences are applied from ``user.js`` on startup; to retain later
+manual toolbar rearrangements, remove its ``browser.uiCustomization.state``
+entry after the first launch.
+
+Both Firefox and LibreWolf disable website color overrides and advertise a dark website preference;
+websites choose whether to use their own dark palette. Site-defined colors, icons,
+backgrounds and animations are preserved. The content stylesheet only applies
+to browser-owned Settings, Home and New Tab pages; it contains no website rules
+or per-site exceptions. Current Gecko uses standard document colors with forced
+colors off, so it does not apply arbitrary theme hex colors to websites.
+
+Fingerprint resistance is unchanged. LibreWolf can substitute standardized
+colors for custom defaults under its privacy protections; this bundle accepts
+that behavior instead of forcing a website palette.
+
+Without the corresponding profile option, the helper skips that browser's
+overlay and tells you so. Profile locations are installation-specific; see
 `Mozilla's profile documentation <https://support.mozilla.org/en-US/kb/profiles-where-firefox-stores-user-data>`_.
+
+qutebrowser website appearance
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+qutebrowser advertises a dark website preference and disables automatic
+recoloring. Websites retain their own styles. No website stylesheet or per-site
+exception is installed. The native white fallback background is preserved:
+qutebrowser has no matching default text-color option, so forcing a dark
+fallback would make unstyled black text unreadable.
+
+The local ``.config/qutebrowser/blank.html`` page uses the fixed Gotham
+palette and is selected for empty new tabs and startup. Keep that file beside
+``config.py`` when copying manually. The path is resolved relative to the
+configuration directory. Browser interface colors remain themed. Restart
+qutebrowser after restoring.
+
+The layout matches the current qutebrowser setup: tabs stay at the top, the
+bottom status bar appears only in modes that need it, and tab progress
+indicators are hidden. Tab titles show the host, pinned tabs show their index,
+and default page zoom is 125%. Fira Mono at 22pt, centered tab labels, tab
+padding, hidden window decorations and the transparent window are retained.
 
 Manual copying
 ~~~~~~~~~~~~~~
@@ -116,15 +195,63 @@ standalone theme.toml by a relative path. Keep those two files together.
 Copy the entire Qtile folder, including my_widgets/ and wallpaper.jpg.
 The wallpaper is resolved relative to config.py and is optional if removed.
 
-PCManFM-Qt's fixed appearance also needs .local/bin/pcmanfm-themed and its
-stylesheet under .config/pcmanfm-qt. The restore helper adjusts the desktop
-entry so it does not depend on ~/.local/bin being in the desktop session's
-PATH. If copying everything manually, add ~/.local/bin to the session's PATH
-or update that desktop entry's Exec path yourself.
+Qt 6 applications use the bundled qt6ct Gotham palette. The restore helper
+sets its absolute color-scheme path for the destination account. If copying
+manually, select the installed ``qt6ct/colors/gotham.conf`` file in qt6ct so
+``color_scheme_path`` points to that file. The template's relative path is a
+portable placeholder for the restore helper.
 
-Copy Firefox's overlay files into the actual profile, not simply into a
-.config/firefox directory. Each application's files can also be restored
-individually; using the helper is the shortest way to handle all destinations.
+The included environment.d entry, Qtile setup and zsh setup select qt6ct.
+Start a new desktop session after restoring so applications inherit
+``QT_QPA_PLATFORMTHEME=qt6ct``. The PCManFM-Qt launcher also selects it directly.
+Its desktop entry is adjusted by the restore helper so it does not depend on
+~/.local/bin being in the desktop session's PATH. When copying manually,
+add ~/.local/bin to the session's PATH or adjust the desktop entry's Exec path.
+
+Copy Firefox's or LibreWolf's overlay files into the corresponding actual
+profile, not simply into a generic configuration directory. Each application's
+files can also be restored individually; using the helper is the shortest way
+to handle all destinations.
+
+Ly login manager
+----------------
+
+The bundle includes an exact copy of /etc/ly/config.ini under etc/ly/config.ini.
+The user-level install.py helper does not install system-wide files. After
+installing Ly on the destination machine, back up its configuration and copy
+this file manually from the bundle directory::
+
+    sudo cp -a /etc/ly/config.ini /etc/ly/config.ini.template-backup-$(date +%Y%m%d-%H%M%S)
+    sudo install -m 644 etc/ly/config.ini /etc/ly/config.ini
+
+The backup command assumes Ly has already created /etc/ly/config.ini. This
+copies only the configuration; it does not enable or restart the login manager.
+The referenced setup.sh, startup.sh, custom-sessions and example.dur resources
+are not included. Review those paths and the configured X11/session commands
+for the destination machine. Optional brightness shortcuts use brightnessctl.
+
+Plymouth boot splash
+--------------------
+
+The bundle includes the active ``arch-boot-dots`` theme, including its script,
+logo, animation frames and GPL-2.0-only license. It also includes the current
+``/etc/plymouth/plymouthd.conf``, which selects that theme. These system files
+are not installed by the user-level ``install.py`` helper.
+
+After installing Plymouth on the destination Arch system, restore the theme
+from the bundle directory::
+
+    sudo install -d /usr/share/plymouth/themes/arch-boot-dots
+    sudo cp -a usr/share/plymouth/themes/arch-boot-dots/. /usr/share/plymouth/themes/arch-boot-dots/
+    sudo install -d /etc/plymouth
+    sudo install -m 644 etc/plymouth/plymouthd.conf /etc/plymouth/plymouthd.conf
+    sudo plymouth-set-default-theme -R arch-boot-dots
+
+The source system's mkinitcpio configuration places the ``plymouth`` hook
+after ``udev`` and before ``autodetect``. Ensure the destination initramfs has
+the Plymouth hook and the kernel command line contains ``splash``. The final
+command selects the theme and rebuilds the initramfs; boot-loader and kernel
+command-line configuration remain machine-specific and are not included.
 
 Shell and Vim
 -------------
@@ -162,11 +289,13 @@ before replacing the snapshots.
 What was preserved and omitted
 ------------------------------
 
-The fixed palette, application layout preferences, Qtile keybindings and
-browser interface settings are preserved, except for the portability fixes
-described in these portability notes. PCManFM-Qt has its own fixed stylesheet rather than a
-global Qt theme. Sioyek's PDF recoloring remains unchanged; Zathura retains
-its existing enabled recoloring and configured page colors.
+Application layout preferences, Qtile keybindings and browser interface
+settings are preserved, with the portability fixes described here and Gotham
+colors applied through the same mappings as the theme switcher. Qt 6
+applications share the bundled qt6ct palette. Sioyek's PDF recoloring remains
+unchanged; Zathura retains its enabled recoloring with Gotham page colors.
+Ly, Plymouth artwork and Vim's separate theme settings are outside the theme
+switcher's application targets and retain their existing configuration.
 
 Personal history, databases, recent-file lists, caches, bytecode, old backups,
 unused palette helpers and downloaded theme collections are omitted.
@@ -180,8 +309,8 @@ change option names or browser stylesheet behavior; this bundle records the
 configuration checked against the installed versions, not a guarantee for
 all future releases.
 
-Checks performed
-----------------
+Checks performed during original preparation
+--------------------------------------------
 
 * Parsed the TOML, INI and Python files.
 * Loaded Qtile's configuration with the included custom widget and wallpaper.
@@ -201,6 +330,47 @@ Checks performed
 GUI startup, rendering and hardware behavior still need checking on the new
 machine. Rofi, Zathura, Sioyek, Clementine and Firefox were not started for
 interactive visual verification during preparation.
+
+Refresh notes (2026-11-14)
+--------------------------
+
+* Set application palettes to Gotham, including both Firefox and LibreWolf
+  overlays, qutebrowser, Qtile, Alacritty, Rofi, Zathura, Sioyek and Clementine.
+  The files remain standalone and do not require a theme-switching program.
+* Added the Gotham qt6ct palette and portable installation path handling.
+  PCManFM-Qt now uses that shared palette in place of its old stylesheet.
+* Alacritty now uses 0.8 opacity. Qtile includes the current six workspaces,
+  grow/normalize shortcuts, bar settings, and bundled JWST wallpaper in fill mode.
+* Updated zsh's Git aliases, default editor and delayed screenshot function.
+* Updated Vim's relative numbers, wrapping/concealment, split mappings, prose
+  column exceptions, VimTeX options and airline theme. Refreshed the installed
+  plugin snapshots; retained UltiSnips because .vimrc still declares it even
+  though it is absent from the active plugin directory.
+* Updated Clementine's appearance, search, library view, playlist, moodbar,
+  sleep-inhibition and other portable preferences. Account credentials, library
+  paths, history and playback/window session state remain excluded. The audio
+  output retains automatic device selection for portability.
+* Retained the PCManFM-Qt launcher name and destination-independent paths.
+  qutebrowser uses a bundled local blank page with the Gotham palette.
+* Retained the widget's existing missing-command/error handling. Corrected the
+  source Qtile reader-workspace match to use regex alternation, and omitted its
+  misspelled, unsupported center_algined widget option.
+* Added the active ``arch-boot-dots`` Plymouth theme and daemon setting. The
+  theme's source files and license are preserved exactly.
+
+Refresh validation: parsed Python, TOML, INI and YAML files; checked shell and
+Vim loading, loaded Qtile and qutebrowser configurations, and exercised restore
+installation, repeat runs, backups and Firefox copying in a temporary home.
+No active settings were used as installation destinations. Desktop rendering
+and hardware behavior were not tested during this refresh.
+
+License
+-------
+
+Original template scripts, documentation and configuration material are
+released under the Zero-Clause BSD license; see ``LICENSE``. Bundled plugins,
+the wallpaper and the Plymouth theme retain their upstream terms; see
+``THIRD_PARTY_LICENSES.md``.
 
 Useful upstream references
 --------------------------

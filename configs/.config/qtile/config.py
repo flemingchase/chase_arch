@@ -6,8 +6,16 @@ from libqtile.utils import guess_terminal
 from libqtile.widget import backlight
 from my_widgets.caps_num_lock_indicator import MyCapsNumLockIndicator
 import re
+import os
+import shutil
 
-# Default color palette.
+# Shared Qt palette for applications launched by this desktop session.
+if (shutil.which("qt6ct") and
+        (Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") /
+         "qt6ct/qt6ct.conf").is_file()):
+    os.environ["QT_QPA_PLATFORMTHEME"] = "qt6ct"
+
+# Gotham color palette.
 colors = {
     "primary": {
         "background": "#0a0f14",
@@ -43,7 +51,6 @@ def my_func(text):
             "qutebrowser", "zathura", "Zathura",
             "Alacritty", "discord", "Discord",
             "sioyek", "Sioyek", "Firefox", "firefox",
-            "strawberry", "Strawberry",
             ]:
         if string in text:
             text = string
@@ -53,6 +60,40 @@ def my_func(text):
     return text.lower()
 
 keys = [
+    Key(
+        [mod, "control"],
+        "l",
+        lazy.layout.grow_right(),
+        desc="Grow window to the right"
+        ),
+
+    Key(
+        [mod, "control"],
+        "h", lazy.layout.grow_left(),
+        desc="Grow window to the left"
+        ),
+
+    Key(
+        [mod, "control"],
+        "j",
+        lazy.layout.grow_down(),
+        desc="Grow window down"
+        ),
+
+    Key(
+        [mod, "control"],
+        "k",
+        lazy.layout.grow_up(),
+        desc="Grow window up"
+        ),
+
+    Key(
+        [mod],
+        "n",
+        lazy.layout.normalize(),
+        desc="Reset all window sizes"
+        ),
+
     Key(
         [mod],
         "h",
@@ -222,31 +263,37 @@ keys = [
 groups = [
     Group(
         "1",
-        label = "dev",
+        label = "term",
         matches = [],
         ),
 
     Group(
         "2",
-        label = "www",
+        label = "web",
         matches = [Match(wm_class=re.compile(r"^(qutebrowser)$"))],
         ),
 
     Group(
         "3",
-        label = "pdf",
-        matches = [Match(wm_class=re.compile(r"^(Zathura)$"))],
+        label = "read",
+        matches = [Match(wm_class=re.compile(r"^(Zathura|sioyek)$"))],
         ),
 
     Group(
         "4",
-        label = "etc",
-        matches = [Match(wm_class=re.compile(r"^(pcmanfm-qt|Pcmanfm-qt)$"))],
+        label = "music",
+        matches = [Match(wm_class=re.compile(r"^(clementine)$"))],
         ),
 
     Group(
         "5",
-        label = "ext",
+        label = "files",
+        matches = [Match(wm_class=re.compile(r"^(pcmanfm-qt)$"))],
+        ),
+
+    Group(
+        "6",
+        label = "misc",
         matches = [],
         ),
 ]
@@ -274,7 +321,7 @@ for i in groups:
 
 layouts = [
     layout.Bsp(
-        border_focus = colors["normal"]["blue"],
+        border_focus = colors["primary"]["foreground"],
         border_normal = colors["primary"]["background"],
         border_width = 2,
         grow_amount = 2,
@@ -308,13 +355,13 @@ screens = [
                     highlight_method = "line",
                     highlight_color = [colors["primary"]["background"], colors["primary"]["background"]],
                     inactive = colors["primary"]["foreground"],
-                    this_current_screen_border = colors["normal"]["blue"],
+                    this_current_screen_border = colors["primary"]["foreground"],
                     toggle = False,
                     ),
 
                 widget.Sep(
                     line_width = 1,
-                    size_percent = 80,
+                    size_percent = 90,
                     ),
 
                 widget.WindowName(
@@ -326,16 +373,16 @@ screens = [
                 widget.Spacer(),
 
                 MyCapsNumLockIndicator(
-                    update_interval =0.01,
+                    update_interval =0.5,
                     ),
 
                 widget.Sep(
                     line_width = 1,
-                    size_percent = 100
+                    size_percent = 90
                     ),
 
                 widget.Clock(
-                    format ="<b>%b %d %H:%M %p</b>"
+                    format ="<b>%b %d %H:%M</b>"
                     ),
             ],
             35,
@@ -346,7 +393,7 @@ screens = [
         ),
         background = colors["primary"]["background"],
         wallpaper = logo,
-        wallpaper_mode = "center",
+        wallpaper_mode = "fill",
     ),
 ]
 

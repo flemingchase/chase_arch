@@ -49,25 +49,39 @@ endfunction
 
 " }}}1
 
-function! vimtex#compiler#callback(status) abort " {{{1
-  " Status:
+function! vimtex#compiler#callback(status, ...) abort " {{{1
+  " Status is one of:
   " 1: Compilation cycle has started
   " 2: Compilation complete - Success
   " 3: Compilation complete - Failed
-  if !exists('b:vimtex.compiler') | return | endif
+
+  " The optional second argument is the compiler that issued the callback. It
+  " defaults to the compiler of the current buffer, which is the relevant one
+  " for external callers (see :help vimtex#compiler#callback).
+  let l:current = get(get(b:, 'vimtex', {}), 'compiler', {})
+  let l:compiler = a:0 > 0 ? a:1 : l:current
+  if empty(l:compiler) | return | endif
+
+  let l:compiler.status = a:status
+
+  " The remaining actions report to the user through the current buffer, so
+  " they only make sense when the callback belongs to the current project.
+  " A continuous compiler keeps issuing callbacks also while we edit a file
+  " that belongs to some other project, and in that case there is nothing to
+  " report here.
+  if l:compiler isnot l:current | return | endif
+
   silent! call s:output.pause()
 
-  let l:__silent = b:vimtex.compiler.silence_next_callback
+  let l:__silent = l:compiler.silence_next_callback
   if l:__silent
-    let b:vimtex.compiler.silence_next_callback = v:false
+    let l:compiler.silence_next_callback = v:false
     if g:vimtex_compiler_silent
       let l:__silent = v:false
     else
       call vimtex#log#set_silent()
     endif
   endif
-
-  let b:vimtex.compiler.status = a:status
 
   if a:status == 1
     if exists('#User#VimtexEventCompiling')
@@ -233,6 +247,18 @@ function! vimtex#compiler#start(...) abort " {{{1
     return
   endif
 
+  let l:clashes = vimtex#compiler#get_output_clashes(
+        \ b:vimtex.compiler,
+        \ vimtex#state#list_all()
+        \)
+  if !empty(l:clashes)
+    call vimtex#log#warning(
+          \ 'Compiler output clash detected for `' . b:vimtex.base . "'!",
+          \ 'The following running compiler(s) write the same output:',
+          \ map(l:clashes, {_, x -> '- ' . x.tex}))
+    return
+  endif
+
   let l:opts = a:0 > 0 ? expandcmd(a:1) : ''
   call b:vimtex.compiler.start(l:opts)
 
@@ -248,6 +274,21 @@ function! vimtex#compiler#start(...) abort " {{{1
   else
     call vimtex#log#info('Compiler started in background!')
   endif
+endfunction
+
+" }}}1
+function! vimtex#compiler#get_output_clashes(compiler, states) abort " {{{1
+  " Return states whose running compiler writes to the same auxiliary
+  " output as a:compiler. These are potentially destructive clashes.
+  let l:signature = a:compiler.get_output_signature('aux')
+  if empty(l:signature) | return [] | endif
+
+  return filter(copy(a:states), {_, x ->
+        \ has_key(x, 'compiler')
+        \ && x.compiler isnot a:compiler
+        \ && has_key(x.compiler, 'is_running') && x.compiler.is_running()
+        \ && x.compiler.get_output_signature('aux') ==# l:signature
+        \})
 endfunction
 
 " }}}1
@@ -350,6 +391,7 @@ function! s:init_compiler(options) abort " {{{1
         \ 'latexmk',
         \ 'latexrun',
         \ 'tectonic',
+        \ 'texpresso',
         \], l:method) < 0
     call vimtex#log#error('Error! Invalid compiler method: ' . l:method)
     let l:method = 'latexmk'

@@ -1,7 +1,7 @@
 set inputbar-bg "#0a0f14"
+set pages-per-row 1
 set selection-clipboard clipboard
 set adjust-open "best-fit"
-set pages-per-row 1
 set scroll-page-aware "true"
 set scroll-full-overlap 0.01
 set zoom-min 10

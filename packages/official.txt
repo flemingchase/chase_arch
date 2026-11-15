@@ -15,12 +15,15 @@ mesa
 alacritty
 rofi
 pcmanfm-qt
+qt6ct
 qutebrowser
 firefox
+librewolf
 zathura
 zathura-pdf-mupdf
 zsh
 gvim
+neovim
 ttf-fira-mono
 adwaita-icon-theme
 # Audio and common desktop utilities

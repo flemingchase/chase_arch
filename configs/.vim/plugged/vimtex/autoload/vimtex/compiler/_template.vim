@@ -17,7 +17,7 @@ let s:compiler = {
       \ 'out_dir': '',
       \ 'continuous': 0,
       \ 'hooks': [],
-      \ 'output': tempname(),
+      \ 'output': '',
       \ 'silence_next_callback': 0,
       \ 'file_info': {},
       \ 'status': -1,
@@ -27,6 +27,10 @@ function! s:compiler.new(options) abort dict " {{{1
   let l:compiler = extend(deepcopy(self), a:options)
   let l:backend = has('nvim') ? 'nvim' : 'jobs'
   call extend(l:compiler, deepcopy(s:compiler_{l:backend}))
+
+  if empty(l:compiler.output)
+    let l:compiler.output = tempname()
+  endif
 
   call l:compiler.__check_requirements()
 
@@ -62,6 +66,41 @@ function! s:compiler.__check_requirements() abort dict " {{{1
 endfunction
 
 " }}}1
+
+function! s:compiler._get_executable_string() abort dict " {{{1
+  " Convert executable (string or list) to a command string
+  "
+  " The executable property can be:
+  "   - A string: 'latexmk'
+  "   - A list: ['docker', 'exec', 'my-container', 'latexmk']
+  "
+  if type(self.executable) == v:t_string
+    return self.executable
+  elseif type(self.executable) == v:t_list
+    return join(self.executable)
+  endif
+
+  throw 'VimTeX: executable must be a string or list'
+endfunction
+
+" }}}1
+function! s:compiler._is_executable_available() abort dict " {{{1
+  " Check if the executable is available
+  "
+  " For string executables, check directly.
+  " For list executables, check only the first element.
+  "
+  if type(self.executable) == v:t_string
+    return executable(self.executable)
+  endif
+
+  return type(self.executable) == v:t_list
+        \ && !empty(self.executable)
+        \ && executable(self.executable[0])
+endfunction
+
+" }}}1
+
 function! s:compiler.__init() abort dict " {{{1
 endfunction
 
@@ -181,12 +220,23 @@ endfunction
 
 " }}}1
 
-function! s:compiler.get_file(ext) abort dict " {{{1
-  for l:root in [
+function! s:compiler._output_roots() abort dict " {{{1
+  " The list of candidate roots for output/auxiliary files, in the order of
+  " precedence used to locate a generated file. Backends that support a
+  " separate auxiliary directory override this.
+  return [
         \ $VIMTEX_OUTPUT_DIRECTORY,
         \ self.out_dir,
-        \ self.file_info.root
+        \ self.file_info.root,
         \]
+endfunction
+
+" }}}1
+function! s:compiler._get_file_candidates(ext) abort dict " {{{1
+  " The absolute candidate paths for the given extension, in order of
+  " precedence, regardless of whether they currently exist.
+  let l:candidates = []
+  for l:root in self._output_roots()
     if empty(l:root) | continue | endif
 
     let l:cand = printf('%s/%s.%s', l:root, self.file_info.jobname, a:ext)
@@ -194,12 +244,30 @@ function! s:compiler.get_file(ext) abort dict " {{{1
       let l:cand = self.file_info.root . '/' . l:cand
     endif
 
+    call add(l:candidates, fnamemodify(l:cand, ':p'))
+  endfor
+
+  return l:candidates
+endfunction
+
+" }}}1
+function! s:compiler.get_file(ext) abort dict " {{{1
+  for l:cand in self._get_file_candidates(a:ext)
     if filereadable(l:cand)
-      return fnamemodify(l:cand, ':p')
+      return l:cand
     endif
   endfor
 
   return ''
+endfunction
+
+" }}}1
+function! s:compiler.get_output_signature(ext) abort dict " {{{1
+  " The path the compiler is expected to write for the given extension,
+  " regardless of whether it currently exists. This is the highest-precedence
+  " candidate root combined with the jobname, and can be used to detect output
+  " clashes between compilers before they start.
+  return get(self._get_file_candidates(a:ext), 0, '')
 endfunction
 
 " }}}1
@@ -313,16 +381,15 @@ function! s:compiler_jobs.exec(cmd) abort dict " {{{1
         \ 'cwd': self.file_info.root,
         \}
   if self.continuous
+    if get(self, 'stdin_pipe', v:false)
+      let l:options.in_io = 'pipe'
+    endif
     let l:options.out_io = 'pipe'
     let l:options.err_io = 'pipe'
-    let l:options.out_cb = function('s:callback_continuous_output')
-    let l:options.err_cb = function('s:callback_continuous_output')
+    let l:options.out_cb = function('s:callback_continuous_output', [self])
+    let l:options.err_cb = function('s:callback_continuous_output', [self])
   else
-    let s:cb_target = self.file_info.target !=# b:vimtex.tex
-          \ ? self.file_info.target
-          \ : ''
-    let s:cb_output = self.output
-    let l:options.exit_cb = function('s:callback')
+    let l:options.exit_cb = function('s:callback_exit', [self])
   endif
 
   let self.job = job_start(a:cmd, l:options)
@@ -359,12 +426,14 @@ function! s:compiler_jobs.get_pid() abort dict " {{{1
 endfunction
 
 " }}}1
-function! s:callback(ch, msg) abort " {{{1
-  if !exists('b:vimtex.compiler') | return | endif
-  if b:vimtex.compiler.status == 0 | return | endif
+function! s:callback_exit(compiler, ch, msg) abort " {{{1
+  if a:compiler.status == 0 | return | endif
 
   try
-    call vimtex#compiler#callback(2 + vimtex#qf#inquire(s:cb_target))
+    call vimtex#compiler#callback(
+          \ 2 + vimtex#qf#inquire(s:callback_target(a:compiler)),
+          \ a:compiler
+          \)
   catch /E565:/
     " In some edge cases, the callback seems to be issued while executing code
     " in a protected context where "cclose" is not allowed with the resulting
@@ -376,10 +445,9 @@ function! s:callback(ch, msg) abort " {{{1
     " See https://github.com/lervag/vimtex/issues/2225
   endtry
 
-  if !exists('b:vimtex.compiler.hooks') | return | endif
   try
-    let l:lines = readfile(s:cb_output)
-    for l:Hook in b:vimtex.compiler.hooks
+    let l:lines = readfile(a:compiler.output)
+    for l:Hook in a:compiler.hooks
       for l:line in l:lines
         call l:Hook(l:line)
       endfor
@@ -389,17 +457,15 @@ function! s:callback(ch, msg) abort " {{{1
 endfunction
 
 " }}}1
-function! s:callback_continuous_output(channel, msg) abort " {{{1
-  if exists('b:vimtex.compiler.output')
-        \ && filewritable(b:vimtex.compiler.output)
-    call writefile([a:msg], b:vimtex.compiler.output, 'aS')
+function! s:callback_continuous_output(compiler, channel, msg) abort " {{{1
+  if filewritable(a:compiler.output)
+    call writefile([a:msg], a:compiler.output, 'aS')
   endif
 
-  call s:check_callback(a:msg)
+  call s:check_callback(a:compiler, a:msg)
 
-  if !exists('b:vimtex.compiler.hooks') | return | endif
   try
-    for l:Hook in b:vimtex.compiler.hooks
+    for l:Hook in a:compiler.hooks
       call l:Hook(a:msg)
     endfor
   catch /E716/
@@ -412,16 +478,16 @@ endfunction
 let s:compiler_nvim = {}
 function! s:compiler_nvim.exec(cmd) abort dict " {{{1
   let l:shell = {
-        \ 'stdin': 'null',
-        \ 'on_stdout': function('s:callback_nvim_output'),
-        \ 'on_stderr': function('s:callback_nvim_output'),
+        \ 'stdin': self.continuous && get(self, 'stdin_pipe', v:false)
+        \   ? 'pipe'
+        \   : 'null',
+        \ 'on_stdout': function('s:callback_nvim_output', [self]),
+        \ 'on_stderr': function('s:callback_nvim_output', [self]),
         \ 'cwd': self.file_info.root,
-        \ 'tex': self.file_info.target,
-        \ 'output': self.output,
         \}
 
   if !self.continuous
-    let l:shell.on_exit = function('s:callback_nvim_exit')
+    let l:shell.on_exit = function('s:callback_nvim_exit', [self])
   endif
 
   call vimtex#jobs#neovim#shell_default()
@@ -464,21 +530,22 @@ function! s:compiler_nvim.get_pid() abort dict " {{{1
 endfunction
 
 " }}}1
-function! s:callback_nvim_output(id, data, event) abort dict " {{{1
+function! s:callback_nvim_output(compiler, id, data, event) abort " {{{1
   " Filter out unwanted newlines
   let l:data = split(substitute(join(a:data, 'QQ'), '^QQ\|QQ$', '', ''), 'QQ')
 
-  if !empty(l:data) && filewritable(self.output)
-    call writefile(l:data, self.output, 'a')
+  if !empty(l:data) && filewritable(a:compiler.output)
+    call writefile(l:data, a:compiler.output, 'a')
   endif
 
   call s:check_callback(
+        \ a:compiler,
         \ get(filter(copy(a:data),
-        \   {_, x -> x =~# '^vimtex_compiler_callback'}), -1, ''))
+        \   {_, x -> x =~# '^vimtex_compiler_callback'}), -1, '')
+        \)
 
-  if !exists('b:vimtex.compiler.hooks') | return | endif
   try
-    for l:Hook in b:vimtex.compiler.hooks
+    for l:Hook in a:compiler.hooks
       call l:Hook(join(a:data, "\n"))
     endfor
   catch /E716/
@@ -486,22 +553,33 @@ function! s:callback_nvim_output(id, data, event) abort dict " {{{1
 endfunction
 
 " }}}1
-function! s:callback_nvim_exit(id, data, event) abort dict " {{{1
-  if !exists('b:vimtex.compiler') | return | endif
-  if b:vimtex.compiler.status == 0 | return | endif
+function! s:callback_nvim_exit(compiler, id, data, event) abort " {{{1
+  if a:compiler.status == 0 | return | endif
 
-  let l:target = self.tex !=# b:vimtex.tex ? self.tex : ''
-  call vimtex#compiler#callback(2 + vimtex#qf#inquire(l:target))
+  call vimtex#compiler#callback(
+        \ 2 + vimtex#qf#inquire(s:callback_target(a:compiler)),
+        \ a:compiler
+        \)
 endfunction
 
 " }}}1
 
 
-function! s:check_callback(line) abort " {{{1
+function! s:check_callback(compiler, line) abort " {{{1
   let l:status = get(s:callbacks, substitute(a:line, '\r', '', ''))
   if l:status <= 0 | return | endif
 
-  call vimtex#compiler#callback(l:status)
+  call vimtex#compiler#callback(l:status, a:compiler)
+endfunction
+
+" }}}1
+function! s:callback_target(compiler) abort " {{{1
+  " The target to inquire the quickfix list for. An empty value means "the
+  " current project", which is the relevant target unless the compiler builds
+  " something else, e.g. a temporary file from :VimtexCompileSelected.
+  return a:compiler.file_info.target !=# get(get(b:, 'vimtex', {}), 'tex', '')
+        \ ? a:compiler.file_info.target
+        \ : ''
 endfunction
 
 let s:callbacks = {

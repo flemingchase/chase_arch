@@ -51,6 +51,8 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
   syntax cluster texClusterOpt contains=
         \texCmd,
         \texComment,
+        \texTabularChar,
+        \texSpecialChar,
         \texGroup,
         \texLength,
         \texOpt,
@@ -107,6 +109,12 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
         \texTabularChar,
         \_texMathBackslash,
         \@NoSpell
+
+  " Alias for the cluster name used by the original tex.vim syntax script.
+  " Several syntax scripts embed TeX math with `syntax include` and then refer
+  " to this cluster by name, e.g. syntax/mediawiki.vim and syntax/rnoweb.vim in
+  " the Vim runtime.
+  syntax cluster texMathZoneGroup contains=@texClusterMath
 
   " }}}2
 
@@ -166,8 +174,8 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
   syntax match texCmdAccent "\%#=1\\[bcdvuH]\ze[^a-zA-Z@]"
   syntax match texCmdAccent /\%#=1\\[=^.~"`']/
   syntax match texCmdAccent /\%#=1\\['=t'.c^ud"vb~Hr]{\a}/
-  syntax match texCmdLigature "\%#=1\v\\%([ijolL]|ae|oe|ss|AA|AE|OE)$"
-  syntax match texCmdLigature "\%#=1\v\\%([ijolL]|ae|oe|ss|AA|AE|OE)\ze[^a-zA-Z@]"
+  syntax match texCmdLigature "\%#=1\v\\%([ijolL]|ae|dj|oe|ss|AA|AE|DJ|OE)$"
+  syntax match texCmdLigature "\%#=1\v\\%([ijolL]|ae|dj|oe|ss|AA|AE|DJ|OE)\ze[^a-zA-Z@]"
 
   " Spacecodes (TeX'isms)
   " * See e.g. https://en.wikibooks.org/wiki/TeX/catcode
@@ -261,7 +269,7 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
         \})
   call vimtex#syntax#core#new_arg('texNewcmdArgBody')
   " The default regexp v2 seems to be faster here:
-  syntax match texNewcmdParm contained "#\+\d" containedin=texNewcmdArgBody
+  syntax match texNewcmdParm contained "#\+[1-9]" containedin=texNewcmdArgBody
 
   " \newenvironment
   syntax match texCmdNewenv nextgroup=texNewenvArgName skipwhite skipnl "\%#=1\\\%(re\)\?newenvironment\>"
@@ -272,15 +280,15 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
         \})
   call vimtex#syntax#core#new_arg('texNewenvArgBegin', {'next': 'texNewenvArgEnd'})
   call vimtex#syntax#core#new_arg('texNewenvArgEnd')
-  syntax match texNewenvParm contained "#\+\d" containedin=texNewenvArgBegin,texNewenvArgEnd
+  syntax match texNewenvParm contained "#\+[1-9]" containedin=texNewenvArgBegin,texNewenvArgEnd
 
   " Definitions/Commands
   " E.g. \def \foo #1#2 {foo #1 bar #2 baz}
-  syntax match texCmdDef "\%#=1\\def\>" nextgroup=texDefArgName skipwhite skipnl
+  syntax match texCmdDef "\%#=1\\[egx]\?def\>" nextgroup=texDefArgName skipwhite skipnl
   syntax match texDefArgName contained nextgroup=texDefParmPre,texDefArgBody skipwhite skipnl "\%#=1\\[a-zA-Z@]\+"
   syntax match texDefArgName contained nextgroup=texDefParmPre,texDefArgBody skipwhite skipnl "\%#=1\\[^a-zA-Z@]"
   syntax match texDefParmPre contained nextgroup=texDefArgBody skipwhite skipnl "#[^{]*"
-  syntax match texDefParm contained "#\+\d" containedin=texDefParmPre,texDefArgBody
+  syntax match texDefParm contained "#\+[1-9]" containedin=texDefParmPre,texDefArgBody
   call vimtex#syntax#core#new_arg('texDefArgBody')
 
   " \let
@@ -520,45 +528,6 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
         \})
 
   " }}}2
-  " {{{2 Zone: Expl3
-
-  syntax region texE3Zone matchgroup=texCmdE3
-        \ start="\%#=1\\\%(ExplSyntaxOn\|ProvidesExpl\%(Package\|Class\|File\)\)"
-        \ end="\%#=1\\ExplSyntaxOff\|\%$"
-        \ transparent
-        \ contains=TOP,@NoSpell,TexError
-
-  call vimtex#syntax#core#new_arg('texE3Group', {
-        \ 'opts': 'contained containedin=@texClusterE3',
-        \ 'contains': 'TOP,@NoSpell,TexError',
-        \})
-
-  syntax match texE3Cmd "\\\w\+"
-        \ contained containedin=@texClusterE3
-        \ nextgroup=texE3Opt,texE3Arg skipwhite skipnl
-  call vimtex#syntax#core#new_opt('texE3Opt', {'next': 'texE3Arg'})
-  call vimtex#syntax#core#new_arg('texE3Arg', {
-        \ 'next': 'texE3Arg',
-        \ 'opts': 'contained transparent'
-        \})
-
-  syntax match texE3CmdNestedZoneEnd '\\\ExplSyntaxOff'
-        \ contained containedin=texE3Arg,texE3Group
-
-  syntax match texE3Variable "\\[gl]_\%(\h\|@@_\@=\)*_\a\+"
-        \ contained containedin=@texClusterE3
-  syntax match texE3Constant "\\c_\%(\h\|@@_\@=\)*_\a\+"
-        \ contained containedin=@texClusterE3
-  syntax match texE3Function "\\\%(\h\|@@_\)\+:\a*"
-        \ contained containedin=@texClusterE3
-        \ contains=texE3Type
-
-  syntax match texE3Type ":[a-zA-Z]*" contained
-  syntax match texE3Parm "#\+\d" contained containedin=@texClusterE3
-
-  syntax cluster texClusterE3 contains=texE3Zone,texE3Arg,texE3Group,texE3Opt
-
-  " }}}2
   " {{{2 Zone: Math
 
   " Define math region group
@@ -702,6 +671,11 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
       call s:match_conceal_fancy()
     endif
 
+    " Conceal tabular characters
+    if g:vimtex_syntax_conceal.texTabularChar
+      syntax match texTabularChar "\\\\" conceal cchar=⏎
+    endif
+
     " Conceal spacing commands
     if g:vimtex_syntax_conceal.spacing
       call s:match_conceal_spacing()
@@ -734,6 +708,55 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
   endif
 
   " }}}2
+  " {{{2 Expl3 mode
+
+  syntax region texE3Zone matchgroup=texCmdE3
+        \ start="\%#=1\\\%(ExplSyntaxOn\|ProvidesExpl\%(Package\|Class\|File\)\)"
+        \ end="\%#=1\\ExplSyntaxOff\|\%$"
+        \ transparent
+        \ contains=@texClusterBasic,texSpecialChar
+
+  call vimtex#syntax#core#new_arg('texE3Group', {
+        \ 'opts': 'contained containedin=@texClusterE3',
+        \ 'contains': '@texClusterBasic,texSpecialChar',
+        \})
+
+  syntax match texE3Cmd "\\\h\+"
+        \ contained containedin=@texClusterE3
+        \ nextgroup=texE3Opt,texE3Arg skipwhite skipnl
+  call vimtex#syntax#core#new_opt('texE3Opt', {'next': 'texE3Arg'})
+  call vimtex#syntax#core#new_arg('texE3Arg', {
+        \ 'next': 'texE3Arg',
+        \ 'contains': '@texClusterBasic,texSpecialChar',
+        \ 'opts': 'contained transparent'
+        \})
+
+  syntax match texE3CmdNestedZoneEnd '\\\ExplSyntaxOff'
+        \ contained containedin=texE3Arg,texE3Group
+
+  syntax match texE3Variable "\\[gl]_\%(\h\|@@_\@=\)*_\a\+"
+        \ contained containedin=@texClusterE3
+  syntax match texE3Constant "\\c_\%(\h\|@@_\@=\)*_\a\+"
+        \ contained containedin=@texClusterE3
+  syntax match texE3Function "\\\%(\h\|@@_\)\+:\a*"
+        \ contained containedin=@texClusterE3
+        \ contains=texE3Type
+
+  syntax match texE3Type ":[a-zA-Z]*" contained
+  syntax match texE3Parm "#\+[1-9]" contained containedin=@texClusterE3
+
+  syntax cluster texClusterE3 contains=texE3Zone,texE3Arg,texE3Group,texE3Opt
+
+  " }}}2
+  " {{{2 Commands: \begin{macrocode}
+
+  " * In documented TeX Format, the 'macrocode' environment separates
+  "   documentation from actual code, hence should get special highlighting.
+  if expand('%:e') ==# 'dtx'
+      syntax match texDtxMacrocode "\%#=2^% \{4}\\\(begin\|end\){macrocode}"
+  endif
+
+  " }}}2
 
   let b:current_syntax = 'tex'
 
@@ -763,7 +786,6 @@ function! vimtex#syntax#core#init_rules() abort " {{{1
         \texMathDelimMod,
         \texMathDelim,
         \@NoSpell
-
 endfunction
 
 " }}}1
@@ -823,6 +845,7 @@ function! vimtex#syntax#core#init_highlights() abort " {{{1
   " See :help group-name for list of conventional group names
 
   " Primitive TeX highlighting groups
+  highlight def link texDtxMacrocode     Special
   highlight def link texArg              Include
   highlight def link texCmd              Statement
   highlight def link texCmdSpaceCodeChar Special
@@ -2455,19 +2478,21 @@ let s:map_accents = [
 
 " }}}1
 function! s:match_conceal_ligatures() abort " {{{1
-  syntax match texCmdLigature "\%#=1\\lq\>" conceal cchar=‘
-  syntax match texCmdLigature "\%#=1\\rq\>" conceal cchar=′
-  syntax match texCmdLigature "\%#=1\\i\>"  conceal cchar=ı
-  syntax match texCmdLigature "\%#=1\\j\>"  conceal cchar=ȷ
-  syntax match texCmdLigature "\%#=1\\AE\>" conceal cchar=Æ
-  syntax match texCmdLigature "\%#=1\\ae\>" conceal cchar=æ
-  syntax match texCmdLigature "\%#=1\\oe\>" conceal cchar=œ
-  syntax match texCmdLigature "\%#=1\\OE\>" conceal cchar=Œ
-  syntax match texCmdLigature "\%#=1\\o\>"  conceal cchar=ø
-  syntax match texCmdLigature "\%#=1\\O\>"  conceal cchar=Ø
-  syntax match texCmdLigature "\%#=1\\aa\>" conceal cchar=å
-  syntax match texCmdLigature "\%#=1\\AA\>" conceal cchar=Å
-  syntax match texCmdLigature "\%#=1\\ss\>" conceal cchar=ß
+  syntax match texCmdLigature "\%#=1\\lq\>\s*" conceal cchar=‘
+  syntax match texCmdLigature "\%#=1\\rq\>\s*" conceal cchar=′
+  syntax match texCmdLigature "\%#=1\\i\>\s*"  conceal cchar=ı
+  syntax match texCmdLigature "\%#=1\\j\>\s*"  conceal cchar=ȷ
+  syntax match texCmdLigature "\%#=1\\AE\>\s*" conceal cchar=Æ
+  syntax match texCmdLigature "\%#=1\\ae\>\s*" conceal cchar=æ
+  syntax match texCmdLigature "\%#=1\\oe\>\s*" conceal cchar=œ
+  syntax match texCmdLigature "\%#=1\\OE\>\s*" conceal cchar=Œ
+  syntax match texCmdLigature "\%#=1\\o\>\s*"  conceal cchar=ø
+  syntax match texCmdLigature "\%#=1\\O\>\s*"  conceal cchar=Ø
+  syntax match texCmdLigature "\%#=1\\aa\>\s*" conceal cchar=å
+  syntax match texCmdLigature "\%#=1\\AA\>\s*" conceal cchar=Å
+  syntax match texCmdLigature "\%#=1\\ss\>\s*" conceal cchar=ß
+  syntax match texCmdLigature "\%#=1\\dj\>\s*" conceal cchar=đ
+  syntax match texCmdLigature "\%#=1\\DJ\>\s*" conceal cchar=Đ
   syntax match texLigature    "--"     conceal cchar=–
   syntax match texLigature    "---"    conceal cchar=—
   syntax match texLigature    "`"      conceal cchar=‘
@@ -2486,7 +2511,6 @@ function! s:match_conceal_fancy() abort " {{{1
   syntax match texCmd         "\%#=1\\dots\>"  conceal cchar=…
   syntax match texCmd         "\%#=1\\slash\>" conceal cchar=/
   syntax match texCmd         "\%#=1\\ldots\>" conceal cchar=…
-  syntax match texTabularChar "\\\\"      conceal cchar=⏎
 
   syntax match texCmdItem     "\%#=1\\item\>"  conceal cchar=○
         \ nextgroup=texItemLabelConcealed
@@ -2659,6 +2683,10 @@ function! s:gather_newtheorems() abort " {{{1
 
   call filter(l:lines, {_, x -> x =~# '^\s*\\newtheorem\>'})
   call map(l:lines, {_, x -> matchstr(x, '^\s*\\newtheorem\>\*\?{\zs[^}]*')})
+
+  " Environment names may contain regex special characters, e.g. a quote (which
+  " is also the pattern delimiter used in vimtex#syntax#core#init_post())
+  call map(l:lines, {_, x -> escape(x, '\"~.*[]^$')})
 
   return l:lines
 endfunction

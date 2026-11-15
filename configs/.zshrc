@@ -29,8 +29,17 @@ alias la="ls -a"
 alias ll="ls -l"
 alias lla="ls -la"
 alias lsd="ls -d */"
+alias ga="git add"
+alias gc="git commit"
+alias gp="git push"
 
 export PATH="$HOME/.local/bin:$PATH"
+export EDITOR=vim
+
+# Use the bundled Gotham palette for Qt applications.
+if (( $+commands[qt6ct] )) && [[ -r ${XDG_CONFIG_HOME:-$HOME/.config}/qt6ct/qt6ct.conf ]]; then
+    export QT_QPA_PLATFORMTHEME=qt6ct
+fi
 
 fzathura() {
     emulate -L zsh
@@ -48,6 +57,24 @@ fzathura() {
     nohup zathura "$@" "$file" </dev/null >/dev/null 2>&1 &!
 }
 
+screenshot() {
+  emulate -L zsh
+
+  local delay=${1:-0}
+  local directory="$HOME/screenshots"
+
+  if [[ "$delay" != <-> ]]; then
+    print -u2 "Usage: screenshot [delay in seconds]"
+    return 1
+  fi
+
+  mkdir -p -- "$directory" || return
+
+  local filename="$directory/$(date '+%Y-%m-%d_%H-%M-%S')_full.png"
+
+  command scrot --count --delay="$delay" "$filename"
+}
+
 printcolors() {
     emulate -L zsh
     local -a names=('Black' 'Red' 'Green' 'Yellow' 'Blue' 'Magenta' 'Cyan' 'White')
@@ -60,15 +87,6 @@ printcolors() {
             $((89+i)) $((89+i)) "$names[i]" \
             $((99+i)) $((99+i)) "$names[i]"
     done
-}
-
-screenshot() {
-    emulate -L zsh
-    local label=${1:-full}
-    (( $# )) && shift
-    local directory="$HOME/screenshots"
-    mkdir -p -- "$directory" || return
-    scrot "$@" "$directory/$(date '+%Y-%m-%d_%H-%M-%S')_${label}.png"
 }
 
 (( $+commands[rbenv] )) && eval "$(rbenv init -)"
