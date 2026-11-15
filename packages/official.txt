@@ -1,6 +1,7 @@
 # Required build tools and installer runtime
 base-devel
 python
+go
 # Desktop and X11 session (managed by Ly)
 qtile
 xorg-server

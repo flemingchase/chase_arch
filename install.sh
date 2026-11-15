@@ -20,7 +20,7 @@ while (( $# )); do
                 exit 2
             fi
             shift ;;
-        --home=*|--firefox-profile=*|--aur-helper=*|--packages-only|--enable-network|--zsh) ;;
+        --home=*|--firefox-profile=*|--aur-helper=*|--packages-only|--no-aur|--enable-network|--zsh) ;;
         *) printf 'chase_arch: unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
     shift
@@ -34,8 +34,8 @@ if $preview || $help || $configs_only; then
     if $help; then
         printf '%s\n' 'Usage: ./install.sh [--dry-run] [--configs-only | --packages-only]' \
             '  [--home PATH] [--firefox-profile PATH] [--aur-helper yay|paru]' \
-            '  [--enable-network] [--zsh]' \
-            'A normal install bootstraps python and base-devel before desktop setup.'
+            '  [--no-aur] [--enable-network] [--zsh]' \
+            'A normal install bootstraps python and base-devel, then installs yay by default.'
         exit 0
     fi
     if $preview && ! $configs_only; then

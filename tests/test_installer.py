@@ -6,7 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('installer', ROOT / 'install.py')
@@ -78,14 +78,50 @@ class InstallerTests(unittest.TestCase):
             ])
 
     def test_package_preview_enables_ly_without_starting_services(self):
+        with patch.object(installer.shutil, 'which', return_value=None), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(installer.main(['--packages-only', '--dry-run']), 0)
+        preview = output.getvalue()
+        self.assertIn('git clone --depth 1', preview)
+        self.assertIn('https://aur.archlinux.org/yay.git', preview)
+        self.assertIn('makepkg --cleanbuild --clean --force', preview)
+        self.assertIn('yay -S --needed -- clementine sioyek-git neovim-remote', preview)
+        self.assertIn('enable ly@tty2.service', preview)
+        self.assertIn('disable getty@tty2.service', preview)
+        self.assertNotIn('--now', preview)
+        self.assertNotIn('startx', preview)
+        self.assertNotIn('xorg-xinit', preview)
+
+    def test_no_aur_skips_helper_and_optional_packages(self):
         result = subprocess.run([sys.executable, str(ROOT / 'install.py'),
-                                 '--packages-only', '--dry-run'], capture_output=True, text=True)
+                                 '--packages-only', '--dry-run', '--no-aur'],
+                                capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('enable ly@tty2.service', result.stdout)
-        self.assertIn('disable getty@tty2.service', result.stdout)
-        self.assertNotIn('--now', result.stdout)
-        self.assertNotIn('startx', result.stdout)
-        self.assertNotIn('xorg-xinit', result.stdout)
+        self.assertNotIn('aur.archlinux.org/yay.git', result.stdout)
+        self.assertNotIn('sioyek-git', result.stdout)
+        self.assertIn('Skipped yay and optional AUR packages', result.stdout)
+
+    def test_yay_build_is_installed_with_selected_privilege_method(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary) / 'yay-12.0.0-1-x86_64.pkg.tar.zst'
+            package.touch()
+            package_list = Mock(stdout=str(package) + '\n')
+            with patch.object(installer.shutil, 'which',
+                              side_effect=lambda name: None if name == 'yay' else f'/usr/bin/{name}'), \
+                    patch.object(installer.tempfile, 'TemporaryDirectory') as temporary_directory, \
+                    patch.object(installer, 'run') as run, \
+                    patch.object(installer.subprocess, 'run', return_value=package_list) as subprocess_run:
+                temporary_directory.return_value.__enter__.return_value = temporary
+                installer.install_yay(False)
+        source = Path(temporary) / 'yay'
+        self.assertEqual([call.args for call in run.call_args_list], [
+            (['git', 'clone', '--depth', '1', '--', installer.YAY_URL, source], False),
+            (['makepkg', '--cleanbuild', '--clean', '--force'], False),
+            (['sudo', 'pacman', '-U', '--needed', '--', package], False),
+        ])
+        self.assertEqual(run.call_args_list[1].kwargs, {'cwd': source})
+        subprocess_run.assert_called_once_with(['makepkg', '--packagelist'], cwd=source, check=True,
+                                               capture_output=True, text=True)
 
     def test_backup_repeat_and_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -76,8 +76,11 @@ audio is unavailable on the new machine.
 # Install packages and configure Ly without copying user settings.
 ./install.sh --packages-only
 
-# Also install the optional AUR list using an already installed helper.
+# Use an already installed paru instead of the default yay helper.
 ./install.sh --aur-helper paru
+
+# Skip both yay and the optional AUR applications.
+./install.sh --no-aur
 
 # After starting Firefox once, close it and choose its actual profile directory.
 ./install.sh --configs-only --firefox-profile /path/to/your/firefox/profile
@@ -100,17 +103,22 @@ the new shell applies at your next login.
 ## Packages and templates
 
 - `packages/official.txt`: core desktop, applications, fonts, audio and utilities.
-- `packages/aur.txt`: optional Clementine, Sioyek Git version and neovim-remote.
+- `packages/aur.txt`: Clementine, Sioyek Git version and neovim-remote, installed
+  through yay by default.
 - `configs/`: copied template bundle, including shell/Vim settings and plugin
   snapshots, Qtile wallpaper/widget, browser styles and the X11 session entry.
 - `configs/install.py`: the original template restore helper, extended to copy
   `.xinitrc` as well. See `configs/README.rst` for application-specific notes.
 
 Edit the package manifests and configurations to customize future installs.
-Package lists accept one package name per line and `#` comments. AUR helper
-installation is deliberately separate: install `paru` or `yay` following its
-upstream instructions, review the packages, then pass `--aur-helper`. The default
-install restores their configuration files but does not install AUR applications.
+Package lists accept one package name per line and `#` comments. By default the
+installer clones yay's AUR package, builds it as the normal desktop user, installs
+the resulting package with pacman, and uses it to install `packages/aur.txt`.
+`base-devel`, Git and Go are installed first as build prerequisites. Pass
+`--aur-helper paru` to use an already installed paru instead, or `--no-aur` to
+skip yay and all optional AUR applications. As with every AUR package, review
+the package source and build instructions before allowing installation on a
+real machine.
 Hardware-specific driver selection and optional TeX, Python environment managers,
 Dropbox and other specialist shell tools are left to the user.
 
