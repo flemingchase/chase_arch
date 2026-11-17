@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh committed upstream snapshots for the self-contained installer."""
+"""Refresh the committed chthm snapshot; templates are retrieved at installation."""
 import argparse
 import hashlib
 import json
@@ -59,27 +59,6 @@ def snapshot(source):
     return commit, result
 
 
-def replace_once(text, before, after):
-    if text.count(before) != 1:
-        raise ValueError('The upstream template installer changed; review the .xinitrc adapter')
-    return text.replace(before, after, 1)
-
-
-def template_installer(content):
-    """Keep the small Arch session extension explicit when refreshing upstream."""
-    text = content.decode()
-    text = replace_once(text, "for name, destination in (('.vimrc', home / '.vimrc'),",
-                        "for name, destination in (('.xinitrc', home / '.xinitrc'), ('.vimrc', home / '.vimrc'),")
-    text = replace_once(text, 'def save(filename, content, mode):\n    filename = filename.resolve()',
-                        "def save(filename, content, mode):\n    executable = filename.name in ('.xinitrc', 'pcmanfm-themed')\n    filename = filename.resolve()")
-    text = replace_once(text, 'if filename.exists() and filename.read_bytes() == content:\n        return False',
-                        'if filename.exists() and filename.read_bytes() == content:\n        if executable and not filename.stat().st_mode & stat.S_IXUSR:\n            filename.chmod(stat.S_IMODE(filename.stat().st_mode) | stat.S_IXUSR)\n            return True\n        return False')
-    text = replace_once(text, "if filename.name == 'pcmanfm-themed':\n        mode |= 0o100  # An existing wrapper must remain executable after replacement.",
-                        'if executable:\n        mode |= stat.S_IXUSR')
-    compile(text, 'configs/install.py', 'exec')
-    return text.encode()
-
-
 def digest(files):
     checksum = hashlib.sha256()
     for name, (content, mode) in sorted(files.items()):
@@ -100,14 +79,14 @@ def ensure_safe_destination(path):
 
 def publish(files, check=False, dry_run=False):
     """Replace managed files only; refuse to delete unknown local material."""
-    tracked = set(git(ROOT, 'ls-files', '-z', '--', 'configs', 'vendor/chthm').decode().split('\0'))
+    tracked = set(git(ROOT, 'ls-files', '-z', '--', 'vendor/chthm').decode().split('\0'))
     ignored = set(git(ROOT, 'ls-files', '--others', '--ignored', '--exclude-standard',
-                      '-z', '--', 'configs', 'vendor/chthm').decode().split('\0'))
+                      '-z', '--', 'vendor/chthm').decode().split('\0'))
     old_manifest = ROOT / 'bundles.json'
     if old_manifest.exists():
         tracked.update(json.loads(old_manifest.read_text()).get('files', []))
     changes, removals = [], []
-    for prefix in ('configs', 'vendor/chthm'):
+    for prefix in ('vendor/chthm',):
         directory = ROOT / prefix
         ensure_safe_destination(directory)
         for path in directory.rglob('*'):
@@ -150,7 +129,6 @@ def publish(files, check=False, dry_run=False):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--templates', required=True, type=Path, help='template_config Git checkout; committed HEAD is used')
     parser.add_argument('--chthm', required=True, type=Path, help='chthm_py Git checkout; committed HEAD is used')
     parser.add_argument('--gotham', type=Path, help='Gotham TOML source; defaults to the existing bundled palette')
     mode = parser.add_mutually_exclusive_group()
@@ -158,33 +136,20 @@ def main(argv=None):
     mode.add_argument('--dry-run', action='store_true', help='Report changes without writing files')
     args = parser.parse_args(argv)
     try:
-        template_commit, templates = snapshot(args.templates)
         chthm_commit, chthm = snapshot(args.chthm)
-        templates['install.py'] = (template_installer(templates['install.py'][0]), 0o755)
-        # Qt INI formatting only; avoid adding an empty trailing line on refresh.
-        clementine = '.config/Clementine/Clementine.conf'
-        content, permissions = templates[clementine]
-        templates[clementine] = (content.rstrip(b'\n') + b'\n', permissions)
-        session = ROOT / 'configs/.xinitrc'
-        ensure_safe_destination(session)
-        templates['.xinitrc'] = (session.read_bytes(), 0o755)
         gotham_path = args.gotham or ROOT / 'vendor/chthm/themes/gotham.toml'
         gotham = gotham_path.read_bytes()
         palette = tomllib.loads(gotham.decode())['colors']['primary']
         if palette.get('background') != '#0a0f14' or palette.get('foreground') != '#98d1ce':
-            raise ValueError('Gotham palette must match the bundled default configuration')
+            raise ValueError('Gotham palette must match the initial desktop theme')
         chthm['themes/gotham.toml'] = (gotham, 0o644)
         if 'themes/alacritty-theme.LICENSE' not in chthm:
             raise ValueError('Missing upstream theme license')
-        files = {f'configs/{name}': value for name, value in templates.items()}
-        files.update({f'vendor/chthm/{name}': value for name, value in chthm.items()})
+        files = {f'vendor/chthm/{name}': value for name, value in chthm.items()}
         manifest = {
             'schema_version': 1,
-            'template_config': {'commit': template_commit, 'destination': 'configs', 'sha256': digest(templates)},
             'chthm_py': {'commit': chthm_commit, 'destination': 'vendor/chthm', 'sha256': digest(chthm)},
-            'local_adaptations': ['configs/.xinitrc', 'configs/install.py (.xinitrc support)',
-                                 'configs/.config/Clementine/Clementine.conf (trailing blank line)',
-                                 'vendor/chthm/themes/gotham.toml'],
+            'local_adaptations': ['vendor/chthm/themes/gotham.toml'],
             'files': sorted(files),
         }
         files['bundles.json'] = ((json.dumps(manifest, indent=2) + '\n').encode(), 0o644)

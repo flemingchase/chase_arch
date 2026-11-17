@@ -54,7 +54,9 @@ class BootstrapTests(unittest.TestCase):
                                     env=environment, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             log = Path(environment['LOG']).read_text()
-            self.assertIn('pacman: -Syu --needed -- python base-devel', log)
+            self.assertIn('pacman: -Syu --needed -- python git', log)
+            self.assertNotIn('base-devel', log)
+            self.assertNotIn(' -- go', log)
             self.assertLess(log.index('pacman: -Syu'), log.index('python:'))
             self.assertIn('python: ./install.py --packages-only mode=sudo', log)
 
@@ -69,7 +71,7 @@ class BootstrapTests(unittest.TestCase):
                                     env=environment, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             log = Path(environment['LOG']).read_text()
-            self.assertIn('su: -c pacman -Syu --needed -- python base-devel', log)
+            self.assertIn('su: -c pacman -Syu --needed -- python git', log)
             self.assertIn('mode=su', log)
 
     @unittest.skipIf(os.geteuid() == 0, 'The entry script intentionally refuses root installation')
@@ -94,6 +96,16 @@ class BootstrapTests(unittest.TestCase):
                 self.assertFalse(Path(environment['LOG']).exists())
                 self.assertFalse((Path(environment['BIN']) / 'python3').exists())
 
+    def test_list_apps_without_python_does_not_bootstrap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, environment = self.environment(directory)
+            result = subprocess.run([BASH, str(ROOT / 'install.sh'), '--list-apps'],
+                                    env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn('--list-apps requires Python', result.stderr)
+            self.assertFalse(Path(environment['LOG']).exists())
+            self.assertFalse((Path(environment['BIN']) / 'python3').exists())
+
     def test_invalid_arguments_fail_before_python_or_privileged_commands(self):
         invalid = [
             ['--configs-only', '--packages-only'],
@@ -105,15 +117,24 @@ class BootstrapTests(unittest.TestCase):
             ['--packages-only', '--firefox-profile', '/tmp/profile'],
             ['--packages-only', '--librewolf-profile=/tmp/profile'],
             ['--packages-only', '--offline-themes'],
+            ['--packages-only', '--template-repo', '/tmp/templates'],
             ['--configs-only', '--aur-helper', 'yay'],
             ['--configs-only', '--no-aur'],
             ['--configs-only', '--enable-network'],
             ['--configs-only', '--zsh'],
+            ['--configs-only', '--keep-shell'],
+            ['--zsh', '--keep-shell'],
+            ['--keep-shell', '--zsh'],
+            ['--with', ',firefox'],
+            ['--with', 'firefox,'],
+            ['--with', 'firefox,,zathura'],
+            ['--with', 'fire fox'],
+            ['--with', 'firefox;uname'],
             ['--aur-helper', 'invalid'],
             ['--aur-helper=invalid'],
             ['--unknown'],
         ]
-        for option in ('--home', '--firefox-profile', '--librewolf-profile', '--aur-helper'):
+        for option in ('--home', '--firefox-profile', '--librewolf-profile', '--aur-helper', '--template-repo', '--with'):
             invalid.extend(([option], [option, ''], [option + '='], [option, '--dry-run']))
         for python_available in (False, True):
             for arguments in invalid:
@@ -139,6 +160,8 @@ class BootstrapTests(unittest.TestCase):
             arguments = ['--configs-only', '--home', '/tmp/staging home',
                          '--firefox-profile=/tmp/firefox profile',
                          '--librewolf-profile', '/tmp/librewolf profile',
+                         '--template-repo', '/tmp/template repository',
+                         '--with', 'firefox, librewolf', '--with=chthm',
                          '--offline-themes', '--dry-run']
             result = subprocess.run([BASH, str(ROOT / 'install.sh'), *arguments],
                                     env=environment, capture_output=True, text=True)
@@ -148,6 +171,7 @@ class BootstrapTests(unittest.TestCase):
 
     def test_valid_package_options_preview_without_python(self):
         for arguments in (['--aur-helper=paru'], ['--no-aur'], ['--packages-only'],
+                          ['--with', 'zathura,firefox', '--keep-shell'],
                           ['--offline-themes', '--enable-network', '--zsh']):
             with self.subTest(arguments=arguments), tempfile.TemporaryDirectory() as directory:
                 commands, environment = self.environment(directory)
@@ -157,6 +181,33 @@ class BootstrapTests(unittest.TestCase):
                 self.assertIn('Preview complete; nothing changed.', result.stdout)
                 self.assertFalse(Path(environment['LOG']).exists())
                 self.assertFalse((commands / 'python3').exists())
+
+    def test_semantic_validation_failure_precedes_privilege_and_bootstrap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands, environment = self.environment(directory)
+            self.script(commands / 'python3',
+                        'printf "python: %s\\n" "$*" >> "$LOG"\n'
+                        'if [[ $2 == --validate-options ]]; then exit 2; fi\n'
+                        'exit 77\n')
+            for command in ('sudo', 'su'):
+                self.script(commands / command,
+                            'printf "unexpected privilege request\\n" >> "$LOG"\nexit 70\n')
+            arguments = ['--with', 'unknown-app']
+            result = subprocess.run([BASH, str(ROOT / 'install.sh'), *arguments],
+                                    env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(Path(environment['LOG']).read_text().splitlines(),
+                             ['python: ./install.py --validate-options --with unknown-app'])
+
+    def test_list_apps_with_python_delegates_without_system_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            commands, environment = self.environment(directory)
+            self.script(commands / 'python3', 'printf "<%s>\\n" "$@" >> "$LOG"\n')
+            result = subprocess.run([BASH, str(ROOT / 'install.sh'), '--list-apps'],
+                                    env=environment, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(Path(environment['LOG']).read_text().splitlines(),
+                             ['<./install.py>', '<--list-apps>'])
 
     def test_python_system_commands_use_selected_su_even_after_sudo_is_installed(self):
         with patch.dict(os.environ, {'CHASE_ARCH_PRIVILEGE': 'su'}), \

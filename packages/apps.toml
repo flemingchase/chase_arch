@@ -1,0 +1,98 @@
+schema_version = 1
+
+[apps.zathura]
+description = "PDF viewer with MuPDF backend"
+official = ["zathura", "zathura-pdf-mupdf"]
+components = ["zathura"]
+targets = ["zathura"]
+
+[apps.clementine]
+description = "Music player"
+aur = ["clementine"]
+requires = ["qt6ct"]
+components = ["clementine"]
+targets = ["clementine"]
+
+[apps.sioyek]
+description = "Research PDF viewer (Git build)"
+aur = ["sioyek-git"]
+requires = ["qt6ct"]
+components = ["sioyek"]
+targets = ["sioyek"]
+
+[apps.plymouth]
+description = "Boot splash; bootloader/initramfs setup remains manual"
+official = ["plymouth"]
+
+[apps.firefox]
+description = "Firefox browser and profile overlay"
+official = ["firefox"]
+components = ["firefox"]
+targets = ["firefox"]
+
+[apps.librewolf]
+description = "LibreWolf browser and profile overlay"
+official = ["librewolf"]
+components = ["librewolf"]
+targets = ["librewolf"]
+
+[apps.pcmanfm-qt]
+description = "File manager for the Super+t binding"
+official = ["pcmanfm-qt", "adwaita-icon-theme"]
+requires = ["qt6ct"]
+components = ["pcmanfm-qt"]
+targets = ["pcmanfm-qt"]
+
+[apps.neovim]
+description = "Additional text editor"
+official = ["neovim"]
+
+[apps.neovim-remote]
+description = "Neovim remote command for editor integration"
+aur = ["neovim-remote"]
+requires = ["neovim"]
+
+[apps.audio]
+description = "PipeWire audio with ALSA/PulseAudio compatibility and WirePlumber"
+official = ["pipewire", "pipewire-alsa", "pipewire-pulse", "wireplumber"]
+
+[apps.networkmanager]
+description = "NetworkManager; use --enable-network to enable its service"
+official = ["networkmanager"]
+
+[apps.network-manager-applet]
+description = "NetworkManager tray applet"
+official = ["network-manager-applet"]
+requires = ["networkmanager"]
+
+[apps.polkit]
+description = "Desktop authorization agent"
+official = ["polkit", "lxqt-policykit"]
+
+[apps.file-roller]
+description = "Archive manager"
+official = ["file-roller"]
+
+[apps.lxqt-sudo]
+description = "Graphical privilege prompt"
+official = ["lxqt-sudo"]
+
+[apps.fzf]
+description = "Fuzzy selector for shell functions"
+official = ["fzf"]
+
+[apps.scrot]
+description = "Screenshot command for shell functions"
+official = ["scrot"]
+
+[apps.xsel]
+description = "X11 clipboard utility for Qtile bindings"
+official = ["xsel"]
+
+[apps.xrandr]
+description = "X11 display configuration command"
+official = ["xorg-xrandr"]
+
+[apps.xset]
+description = "X11 settings command used by the Caps Lock indicator"
+official = ["xorg-xset"]

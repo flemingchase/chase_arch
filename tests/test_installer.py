@@ -12,28 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('installer', ROOT / 'install.py')
 installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
-spec = importlib.util.spec_from_file_location('templates', ROOT / 'configs/install.py')
-templates = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(templates)
 
 
 class InstallerTests(unittest.TestCase):
-    def test_full_template_restore_is_repeatable(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            home = Path(temporary)
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(templates.main(['--home', str(home)]), 0)
-                output = io.StringIO()
-                with contextlib.redirect_stdout(output):
-                    self.assertEqual(templates.main(['--home', str(home)]), 0)
-            self.assertIn('Updated 0 files.', output.getvalue())
-            self.assertTrue((home / '.config/qtile/wallpaper.jpg').is_file())
-            self.assertTrue((home / '.xinitrc').is_file())
-            self.assertTrue((home / '.xinitrc').stat().st_mode & 0o100)
-            self.assertEqual((home / '.xinitrc').read_bytes(), (ROOT / 'configs/.xinitrc').read_bytes())
-            self.assertTrue((home / '.local/bin/pcmanfm-themed').stat().st_mode & 0o100)
-            self.assertIn(str(home), (home / '.local/share/applications/pcmanfm-qt.desktop').read_text())
-
     def test_dry_run_has_no_writes(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary) / 'home'
@@ -49,21 +30,21 @@ class InstallerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             target = home / 'session'
-            content = (ROOT / 'configs/.xinitrc').read_bytes()
+            content = (ROOT / 'session/xinitrc').read_bytes()
             target.write_bytes(content)
             target.chmod(0o600)
             link = home / '.xinitrc'
             link.symlink_to(target)
-            self.assertTrue(templates.save(link, content, 0o755))
+            self.assertTrue(installer.install_session(installer.target_environment(home)))
             self.assertTrue(link.is_symlink())
             self.assertEqual(target.stat().st_mode & 0o777, 0o700)
-            self.assertFalse(templates.save(link, content, 0o755))
+            self.assertFalse(installer.install_session(installer.target_environment(home)))
             target.write_text('old session')
             target.chmod(0o600)
             with contextlib.redirect_stdout(io.StringIO()):
-                self.assertTrue(templates.save(link, content, 0o755))
+                self.assertTrue(installer.install_session(installer.target_environment(home)))
             self.assertEqual(target.stat().st_mode & 0o777, 0o700)
-            self.assertEqual(len(list(home.glob('session.template-backup-*'))), 1)
+            self.assertEqual(len(list(home.glob('session.chase-arch-backup-*'))), 1)
 
     def test_ly_disables_previous_manager_and_getty_before_enabling(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -82,26 +63,99 @@ class InstallerTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(installer.main(['--packages-only', '--dry-run']), 0)
         preview = output.getvalue()
-        self.assertIn('git clone --depth 1', preview)
-        self.assertIn('https://aur.archlinux.org/yay.git', preview)
-        self.assertIn('makepkg --cleanbuild --clean --force', preview)
-        self.assertIn('-S --needed -- clementine sioyek-git neovim-remote', preview)
-        self.assertIn('tools/su_exec.py', preview)
-        self.assertIn('--sudoloop=false', preview)
+        self.assertNotIn('git clone', preview)
+        self.assertNotIn('makepkg', preview)
+        self.assertNotIn('neovim-remote', preview)
+        self.assertNotIn('clementine', preview)
+        self.assertNotIn('sioyek', preview)
+        self.assertNotIn('base-devel', preview)
+        self.assertNotIn('firefox', preview)
+        self.assertNotIn('librewolf', preview)
         self.assertIn('enable ly@tty2.service', preview)
         self.assertIn('disable getty@tty2.service', preview)
         self.assertNotIn('--now', preview)
         self.assertNotIn('startx', preview)
         self.assertNotIn('xorg-xinit', preview)
 
-    def test_no_aur_skips_helper_and_optional_packages(self):
+    def test_no_aur_core_install_never_bootstraps_a_helper(self):
         result = subprocess.run([sys.executable, str(ROOT / 'install.py'),
                                  '--packages-only', '--dry-run', '--no-aur'],
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('aur.archlinux.org/yay.git', result.stdout)
-        self.assertNotIn('sioyek-git', result.stdout)
-        self.assertIn('Skipped yay and optional AUR packages', result.stdout)
+        self.assertNotIn('neovim-remote', result.stdout)
+
+    def test_selected_aur_module_previews_build_tools_and_helper(self):
+        with patch.object(installer.shutil, 'which', return_value=None), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(installer.main(['--packages-only', '--with', 'neovim-remote', '--dry-run']), 0)
+        preview = output.getvalue()
+        self.assertIn('https://aur.archlinux.org/yay.git', preview)
+        self.assertIn('makepkg --cleanbuild --clean --force', preview)
+        self.assertIn('-S --needed -- neovim-remote', preview)
+        self.assertIn('base-devel', preview)
+        self.assertIn('tools/su_exec.py', preview)
+        self.assertIn('--sudoloop=false', preview)
+
+    def test_zsh_is_default_login_shell_with_keep_shell_opt_out(self):
+        for extra, changes_shell in (([], True), (['--keep-shell'], False)):
+            with self.subTest(extra=extra), patch.object(installer, 'run') as run, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(installer.main(['--packages-only', '--dry-run', *extra]), 0)
+            shell_calls = [call for call in run.call_args_list if call.args[0][0] == 'chsh']
+            self.assertEqual(bool(shell_calls), changes_shell)
+            if shell_calls:
+                self.assertEqual(shell_calls[0].args[0], ['chsh', '-s', '/usr/bin/zsh'])
+
+    def test_enable_network_selects_networkmanager_and_enables_only_future_boots(self):
+        with patch.object(installer, 'run') as run, contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(installer.main(['--packages-only', '--dry-run', '--enable-network']), 0)
+        commands = [call.args[0] for call in run.call_args_list]
+        package_command = next(command for command in commands if 'pacman' in command)
+        self.assertIn('networkmanager', package_command)
+        network_command = next(command for command in commands if 'NetworkManager.service' in command)
+        self.assertEqual(network_command, ['sudo', 'systemctl', 'enable', 'NetworkManager.service'])
+        self.assertNotIn('--now', network_command)
+
+    def test_unknown_optional_app_fails_before_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / 'missing'
+            result = subprocess.run([sys.executable, str(ROOT / 'install.py'), '--configs-only',
+                                     '--home', str(home), '--with', 'unknown-app'],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Unknown optional applications', result.stderr)
+            self.assertNotIn('git clone', result.stdout)
+            self.assertNotIn('pacman', result.stdout)
+            self.assertFalse(home.exists())
+
+    def test_no_aur_rejects_requested_aur_application(self):
+        result = subprocess.run([sys.executable, str(ROOT / 'install.py'), '--packages-only',
+                                 '--dry-run', '--no-aur', '--with', 'clementine'],
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('--no-aur conflicts', result.stderr)
+        self.assertNotIn('pacman', result.stdout)
+
+    def test_catalog_and_validation_modes_do_not_start_installation(self):
+        for arguments in (['--list-apps'], ['--validate-options', '--with', 'zathura,firefox']):
+            with self.subTest(arguments=arguments), \
+                    patch.object(installer, 'validate_bundle') as validate, \
+                    patch.object(installer, 'plan_profiles') as profiles, \
+                    patch.object(installer, 'retrieve_templates') as retrieve, \
+                    patch.object(installer, 'run') as run, \
+                    patch.object(installer.os, 'geteuid', return_value=0), \
+                    contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(installer.main(arguments), 0)
+            validate.assert_not_called()
+            profiles.assert_not_called()
+            retrieve.assert_not_called()
+            run.assert_not_called()
+            if arguments == ['--list-apps']:
+                self.assertIn('Required:', output.getvalue())
+                self.assertIn('zathura', output.getvalue())
+            else:
+                self.assertEqual(output.getvalue(), '')
 
     def test_yay_build_is_installed_with_selected_privilege_method(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -124,24 +178,6 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(run.call_args_list[1].kwargs, {'cwd': source})
         subprocess_run.assert_called_once_with(['makepkg', '--packagelist'], cwd=source, check=True,
                                                capture_output=True, text=True)
-
-    def test_backup_repeat_and_symlink(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            home = Path(temporary)
-            original = home / 'original'
-            original.write_text('old settings')
-            link = home / '.vimrc'
-            link.symlink_to(original)
-            writes = templates.plan(ROOT / 'configs', home, home / '.config', home / '.local/share')
-            target, content, mode = next(row for row in writes if row[0] == link)
-            self.assertTrue(templates.save(target, content, mode))
-            self.assertTrue(link.is_symlink())
-            self.assertEqual(original.read_bytes(), content)
-            backups = list(home.glob('original.template-backup-*'))
-            self.assertEqual(len(backups), 1)
-            self.assertEqual(backups[0].read_text(), 'old settings')
-            self.assertFalse(templates.save(target, content, mode))
-            self.assertEqual(len(list(home.glob('original.template-backup-*'))), 1)
 
     def test_invalid_profile_fails_before_package_commands(self):
         with tempfile.TemporaryDirectory() as temporary:

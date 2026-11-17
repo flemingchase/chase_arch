@@ -1,0 +1,10 @@
+# Installer runtime and Git template retrieval.
+python
+git
+# X11 session, graphics and configured font.
+xorg-server
+xorg-xauth
+mesa
+ttf-fira-mono
+# Shared Qt appearance support for the default chthm integration.
+qt6ct

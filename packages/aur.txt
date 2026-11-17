@@ -1,4 +1,0 @@
-# Applications from the template bundle, installed using yay by default.
-clementine
-sioyek-git
-neovim-remote

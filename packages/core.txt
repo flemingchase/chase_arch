@@ -1,0 +1,8 @@
+# Required repository packages. chthm is installed from its bundled source.
+zsh
+vim
+qtile
+ly
+alacritty
+qutebrowser
+rofi

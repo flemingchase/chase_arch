@@ -5,37 +5,49 @@
 > package choices before installing them.
 
 > [!WARNING]
-> Experimental: automated checks and isolated configuration/browser installs
-> have passed, but a complete installation in a fresh Arch virtual machine has
-> not yet been performed. Package installation changes the target system.
+> Experimental: automated checks and isolated installations are available, but
+> a complete installation in a fresh Arch virtual machine is still required to
+> validate package builds, login-manager startup and the graphical session.
 
-One repository sets up a Qtile/X11 desktop on a fresh, already bootable Arch
-Linux installation. The normal installer performs these steps in order:
+A modular Qtile/X11 desktop installer for an already bootable Arch Linux system.
+The default full installation includes these eight components:
 
-1. Install the official packages and AUR applications.
-2. Initialize Firefox and LibreWolf's native default profiles when necessary.
-3. Restore the bundled Gotham application configurations and browser layouts.
-4. Install the bundled chthm program, connect it to those configurations, and
-   select Gotham without restarting applications.
-5. Enable Ly for the next boot, with optional NetworkManager and login-shell setup.
+| Role | Package |
+| --- | --- |
+| Shell | `zsh` |
+| Text editor | `vim` |
+| Window manager | `qtile` |
+| Display manager | `ly` |
+| Terminal emulator | `alacritty` |
+| Web browser | `qutebrowser` |
+| Application launcher | `rofi` |
+| Theme switcher | `chthm` (bundled program) |
 
-Both `template_config` and `chthm_py` are included as source snapshots in this
-repository. There are no Git submodules and no sibling checkouts to download.
-The installed chthm program has its own private copy under the destination
-user's home; it continues to work after the downloaded installer is removed.
+The core also installs the supporting packages listed in `packages/support.txt`:
+Python, Git, Xorg, Xauth, Mesa, Fira Mono and qt6ct for shared Qt 6 theme support.
+The seven official application packages are listed in `packages/core.txt`;
+chthm is installed from `vendor/chthm/`, not through pacman. Pacman resolves
+package dependencies.
+Other applications and features are opt-in; the default run does not install an
+AUR helper or build toolchain.
 
-## Start from a base Arch installation
+Application configurations come from
+[template_config](https://github.com/flemingchase/template_config). Each full or
+configuration-only run shallow-clones its current default branch into a temporary
+directory, reports the commit, and restores only the selected components. The
+checkout is removed after success or failure. No template snapshot or Git
+submodule is carried in this repository.
 
-Boot the installed system, log in as a normal user, and establish an internet
-connection. You need either sudo access or the root password for `su`. Disk
-partitioning, bootloader setup, user creation and hardware-specific graphics
-selection remain part of the base installation.
+## Install the core
 
-Install Git if it is missing, then download this one repository:
+Boot the installed Arch system, log in as a normal user, and establish an internet
+connection. Disk partitioning, bootloader setup, user creation and hardware-specific
+graphics configuration are outside this installer. Sudo access or the root password
+for `su` is required for system changes.
 
 ```sh
+# Install Git if necessary, using either su or sudo.
 su -c 'pacman -Syu --needed git'
-# Or: sudo pacman -Syu --needed git
 
 git clone --depth 1 https://github.com/flemingchase/chase_arch.git
 cd chase_arch
@@ -43,199 +55,251 @@ cd chase_arch
 ./install.sh
 ```
 
-An extracted GitHub ZIP also works: enter its directory and run `bash install.sh`.
-Run the installer as the normal desktop user, without `sudo` in front of it.
-The Bash entry point installs Python and base-devel if they are missing, then
-runs the Python coordinator. Package transactions use sudo when authorized,
-or interactive root-password prompts through su. No sudo privileges are granted
-implicitly. Pacman and the AUR helper retain their normal review prompts.
+Run as the normal desktop user, without `sudo` before `install.sh`. An extracted
+GitHub ZIP also works with `bash install.sh`. The entry script installs Python and
+Git when necessary; the coordinator installs the selected official packages with
+a full `pacman -Syu --needed` transaction. Existing sudo/su authorization and normal
+package-review prompts are preserved.
 
-The standard run installs yay if necessary, building it as the normal user,
-and installs Clementine, Sioyek and neovim-remote through it. Its privileged
-package commands also support the su path. Official packages include Firefox,
-LibreWolf, qutebrowser, Qtile, Alacritty, Rofi, Zathura, PCManFM-Qt, qt6ct,
-zsh, Vim, Neovim, fonts, audio and desktop utilities. Official package installation
-uses a full `pacman -Syu` transaction rather than a partial upgrade.
-
-The default palette is Gotham: background `#0a0f14`, foreground `#98d1ce`.
-Firefox and LibreWolf have square compact tabs and the bundled layouts;
-qutebrowser uses the current tab/status-bar layout and 125% page zoom. Website
-colors remain under website control, with a native dark preference and no
-forced website stylesheets.
-
-Close affected applications before rerunning the installer. Existing browser
-profiles are reused; if selection is ambiguous, specify their paths explicitly.
-A fresh browser is initialized briefly in headless mode on a blank page so its
-own installation-specific default profile receives the overlay. Existing locked
-profiles are rejected rather than overwritten while the browser is running.
-No browsing history, accounts, credentials or extensions are imported.
-
-## First login and theme changes
+The installer validates the retrieved template restore plan before the main package
+transaction, installs selected packages, prepares selected browser profiles, restores
+selected configurations, installs its own `session/xinitrc` launcher, and installs
+or reconnects chthm with Gotham selected. It then
+enables Ly for the next boot and makes zsh the login shell. Use `--keep-shell` to
+retain your existing login shell while still installing zsh and `.zshrc`. `--zsh`
+remains accepted as a compatibility alias for the default shell behavior.
 
 After installation, reboot and select the **xinitrc** session in Ly. The installer
 enables `ly@tty2.service`, disables `getty@tty2.service`, and disables another
-registered display manager if present. It does not stop the current session or
-start/restart services during installation.
+registered display manager if present. It does not start or restart services or
+stop the current graphical session. The login-shell change may prompt for your
+password and takes effect on the next login.
 
-The bundled `.xinitrc` adds `~/.local/bin` to PATH and launches Qtile. This makes
-chthm available in desktop terminals even if your login shell remains Bash.
-The zsh configuration additionally loads chthm's shell integration. To make zsh
-your login shell during installation, use `./install.sh --zsh`.
+## Choose optional applications
 
 ```sh
+./install.sh --list-apps
+
+# Add a PDF viewer, file manager and audio.
+./install.sh --with zathura,pcmanfm-qt,audio
+
+# The option can be repeated.
+./install.sh --with firefox --with librewolf
+
+# AUR applications use yay by default, installed only when needed.
+./install.sh --with clementine,sioyek
+
+# Use an already installed paru for selected AUR applications.
+./install.sh --with neovim-remote --aur-helper paru
+```
+
+`--with` accepts comma-separated names from `packages/apps.toml`. Dependencies
+between modules are included automatically. Core components cannot be removed
+through this option; naming an already included core component is accepted and
+does not add another installation. `librefox` is accepted as an alias for `librewolf`.
+
+| Option name | Adds | Additional modules |
+| --- | --- | --- |
+| `zathura` | Zathura and its MuPDF PDF backend | — |
+| `clementine` | Clementine from the AUR | — |
+| `sioyek` | `sioyek-git` from the AUR | — |
+| `plymouth` | Plymouth package; boot setup remains manual | — |
+| `firefox` | Firefox and its profile overlay | — |
+| `librewolf` | LibreWolf and its profile overlay | — |
+| `pcmanfm-qt` | File manager and Adwaita icons | — |
+| `neovim` | Additional text editor | — |
+| `neovim-remote` | AUR remote command for Neovim | `neovim` |
+| `audio` | PipeWire, ALSA/PulseAudio compatibility and WirePlumber | — |
+| `networkmanager` | NetworkManager package | — |
+| `network-manager-applet` | NetworkManager tray applet | `networkmanager` |
+| `polkit` | Polkit and the LXQt authorization agent | — |
+| `file-roller` | Archive manager | — |
+| `lxqt-sudo` | Graphical privilege prompt | — |
+| `fzf` | Fuzzy selector used by shell functions | — |
+| `scrot` | Screenshot command | — |
+| `xsel` | X11 clipboard command | — |
+| `xrandr` | X11 display configuration command | — |
+| `xset` | X11 command used by the Caps Lock indicator | — |
+
+Clementine, Sioyek and PCManFM-Qt use the qt6ct support already included in the core.
+
+`base-devel` is added only for selected AUR packages; building yay additionally
+requires Go. `--no-aur` rejects a selection containing AUR applications rather
+than silently omitting them. AUR packages are built as the normal user.
+
+`--with networkmanager` installs the package without enabling its service.
+`--enable-network` both selects NetworkManager and enables it for future boots,
+without switching the current connection. Use this only when NetworkManager should
+manage the destination system's network configuration.
+
+Rerunning with a smaller selection does not uninstall previously installed optional
+applications or delete their existing settings. Select the modules you want to
+install or restore on each run.
+
+## Configurations, browsers and themes
+
+The core restores the zsh, Vim, Qtile, Alacritty, qutebrowser, Rofi and qt6ct
+components, then connects them to chthm and applies Gotham. Optional configuration
+directories and browser overlays are restored only when their modules are selected. Firefox and LibreWolf
+are not selected merely because their executables or profiles already exist.
+
+For a selected Firefox or LibreWolf, the installer reuses its native default
+profile or initializes one briefly in headless mode. Ambiguous selections require
+an explicit existing profile directory; selecting a profile also selects its
+browser module:
+
+```sh
+./install.sh --with firefox --firefox-profile /path/to/firefox/profile
+./install.sh --configs-only --librewolf-profile /path/to/librewolf/profile
+```
+
+Close selected applications before restoration. Locked browser profiles are rejected.
+No browsing history, accounts, credentials or extensions are imported. An explicit
+profile path must already exist; find it on `about:support`.
+
+Every full or configuration-only run installs or reconnects `chthm` from the
+source retained in `vendor/chthm/`. The theme catalogue download can be skipped:
+
+```sh
+./install.sh --offline-themes
+
+# After installation:
 chthm list
 chthm gotham
 chthm kimbie_dark
 ```
 
-The installer seeds Gotham and Kimbie Dark locally, then chthm attempts to
-retrieve its larger upstream theme catalogue. If that download fails, the
-bundled themes remain usable. Use `--offline-themes` to skip this catalogue
-download deliberately; this does not make package installation offline.
+Installation creates the private program copy and initially applies Gotham
+without reloading applications. The initial command receives the selected theme
+targets. Existing chthm settings still apply, including `additional_targets`;
+its Qt migration can also remove its own older PCManFM-Qt stylesheet overrides.
+Template component selection does not replace chthm's independent configuration.
+Gotham and Kimbie Dark are seeded locally. Normally chthm also downloads its larger
+theme catalogue; `--offline-themes` skips that catalogue download.
+It does not make package installation or Git retrieval offline.
+Ordinary later theme changes retain chthm's own reload behavior.
 
-Qt 6 applications share qt6ct's palette. Firefox and LibreWolf apply changed
-browser-interface styles after restart. Normal chthm theme changes retain the
-program's application-reload behavior; the installer uses `--no-reload` for its
-initial theme selection.
+The Qtile template provides Super+Return for the terminal, Super+a for
+qutebrowser, and Super+Space for Rofi, all available in the default setup.
+Super+t requires the optional `pcmanfm-qt`, and the clipboard-clearing binding
+requires `xsel`. The Caps Lock indicator remains empty
+without `xset`. Shell functions using fzf or scrot require the corresponding optional
+commands. These shortcuts/functions do not install their dependencies.
 
-Super+Return opens a terminal, Super+Space opens Rofi, Super+t opens the file
-manager, and Super+a opens qutebrowser. Super+Ctrl+q exits Qtile.
+Open Vim as the destination user and run `:PlugInstall` to download VimTeX,
+vim-airline, vim-airline-themes and UltiSnips. Git and internet access are needed;
+downloaded plugin files are not distributed with the current templates. If upgrading
+from an old plugin snapshot, review local edits and move the old `~/.vim/plugged`
+directory to a backup before installing fresh plugin checkouts. Arch's `vim`
+supports Python but lacks the X clipboard features supplied by `gvim`; `gvim` is
+an alternative Vim package, not an additional core application. VimTeX compilation
+and viewing require a TeX toolchain, latexmk and the selected viewer separately.
 
-## Options
+Ly's system configuration and Plymouth artwork remain in `template_config` for
+manual restoration. `--with plymouth` installs its package only: it does not modify
+bootloader arguments, add initramfs hooks or rebuild the initramfs. See the template
+repository's `README.rst` for the system-file instructions.
+
+## Installation modes
 
 ```sh
-# Optional: use NetworkManager on future boots and choose zsh as login shell.
-./install.sh --enable-network --zsh
+# Restore selected user configurations and chthm; no system package, service or shell changes.
+./install.sh --configs-only --with zathura
 
-# Restore the configurations, then install/reconnect chthm and select Gotham.
-# Uses installed programs; does not install packages or change services.
-./install.sh --configs-only
-
-# Stage only user files in another home, using the bundled theme collection.
+# Stage selected user files in an isolated home.
 ./install.sh --configs-only --home /tmp/chase-arch-preview --offline-themes
 
-# Inspect that same operation without writes or browser initialization.
-./install.sh --configs-only --home /tmp/chase-arch-preview --offline-themes --dry-run
+# Preview without writes, retrieval or browser initialization.
+./install.sh --configs-only --home /tmp/chase-arch-preview --dry-run
 
-# Install packages and configure Ly, without user configurations or chthm.
-./install.sh --packages-only
+# Clone templates from another Git URL or a local Git repository.
+./install.sh --configs-only --template-repo /path/to/template_config
 
-# Use an already installed paru instead of bootstrapping yay.
-./install.sh --aur-helper paru
-
-# Skip AUR applications; all three browsers are in the official package list.
-./install.sh --no-aur
-
-# Choose existing profiles when automatic discovery is ambiguous.
-./install.sh --configs-only \
-  --firefox-profile /path/to/firefox/profile \
-  --librewolf-profile /path/to/librewolf/profile
+# Install selected packages and configure Ly/zsh; skip user-file restoration and chthm.
+./install.sh --packages-only --with audio
 ```
 
-`--dry-run` performs no installs, writes, theme downloads or browser starts.
-With Python available it previews the complete workflow and validates existing
-profile/template destinations. Without Python it shows the prerequisite phase
-and explains why the remaining preview is unavailable. Help and preview never
-bootstrap Python. Invalid option combinations are rejected in Bash first.
+`--configs-only` requires Python, Git and the selected applications to be installed
+already. It always installs or reconnects chthm. `--packages-only` skips all
+user-level configuration and chthm installation steps. `--home` is limited
+to `--configs-only` and isolates HOME, XDG directories and ZDOTDIR; it does not install
+system packages into the staging directory.
 
-`--configs-only` requires Python and the applications you want configured to
-already be installed; installing zsh also enables chthm's shell syntax check. `--home` is
-limited to this mode and isolates HOME, XDG configuration/data/state/cache paths
-and ZDOTDIR. It does not install system packages into that directory. An explicit
-browser profile must already exist; use `about:support` to find it.
+`--dry-run` performs no installs, writes, Git clones, theme downloads or browser
+starts. With Python available it previews the selection and validates profile
+selection. Destination validation requires the retrieved template and occurs
+during a real run before the main package transaction. Without Python, the preview
+describes prerequisites and explains why the full plan is unavailable. Help and
+listing/preview operations do not install prerequisites.
 
-`--enable-network` enables NetworkManager without switching the current
-connection. Select it when NetworkManager should own the new system's network
-configuration; avoid conflicting network managers. `--zsh` invokes `chsh`, which
-may request your password and takes effect on the next login.
+## Maintain the modules and source repositories
 
-## Included files and scope
+| File | Responsibility |
+| --- | --- |
+| `packages/core.txt` | The seven official core application packages; bundled chthm is separate |
+| `packages/support.txt` | Supporting runtime, X11, graphics, fonts and qt6ct packages |
+| `packages/apps.toml` | Optional modules: packages, dependencies, template components and theme targets |
+| `app_modules.py` | Selection validation and dependency resolution |
+| `install.sh` | Prerequisite bootstrap and command-line validation |
+| `install.py` | Retrieval, installation and configuration orchestration |
+| `browser_profiles.py` | Selected Firefox/LibreWolf profile handling |
+| `session/xinitrc` | The Qtile/X11 session launcher |
+| `vendor/chthm/` | Required theme-switcher source and its tests/licenses |
+| `bundles.json`, `tools/sync_bundles.py` | chthm snapshot inventory and refresh |
 
-- `install.sh`: base-Arch bootstrap and argument validation.
-- `install.py`: package → profiles → templates → chthm orchestration.
-- `browser_profiles.py`: native Firefox/LibreWolf profile discovery and setup.
-- `packages/official.txt` and `packages/aur.txt`: editable package manifests.
-- `configs/`: current template snapshot, including its original licenses.
-- `vendor/chthm/`: bundled chthm installer, source, tests, themes and licenses.
-- `bundles.json`: source commit IDs, content hashes and bundled-file inventory.
-- `tools/sync_bundles.py`: maintainer refresh command.
-- `tools/su_exec.py`: argument-preserving adapter for AUR privilege commands.
+Add an optional module to `packages/apps.toml` with its package lists and any
+`requires`, `components` or `targets` entries. Package dependencies are handled by
+pacman/AUR tooling; module dependencies express the additional selections needed
+for this desktop configuration. A new template component must also be implemented
+in the source template installer, and a new theme target requires a chthm adapter.
 
-The configuration snapshot includes `.xinitrc` support specific to this central
-installer. The source template and chthm repositories remain independently
-usable. Editing or pushing either source repository does not automatically
-update this bundle: refresh the snapshots and commit the resulting changes here.
+The retrieved template installer must support `--components`. Commit and push that
+API and the intended configuration changes in `template_config` before installing
+from GitHub. An older template installer is rejected during preflight rather than
+being allowed to restore every component. Git retrieval uses committed files even
+when `--template-repo` points to a local checkout; uncommitted edits are not included.
+Subsequent template updates require committing and pushing the source repository,
+with no snapshot synchronization in `chase_arch`.
 
-Ly's system configuration and the Plymouth artwork shipped inside `configs/`
-remain available for manual restoration as described in `configs/README.rst`.
-The central installer enables Ly but does not configure a boot splash, rebuild
-initramfs images, change bootloader options, or choose GPU-specific drivers.
-TeX toolchains and specialist shell tools are also outside the default setup.
-
-## Backups and repeat runs
-
-Template restoration skips identical files and creates unique
-`FILENAME.template-backup-TIMESTAMP-ID` backups before replacing changed files.
-Existing dotfile symlinks are preserved. chthm then adds its managed integration
-blocks and maintains its own backups. Rerunning the full/configuration workflow
-reapplies the bundled defaults and selects Gotham; use `chthm THEME` for an
-ordinary theme change that does not restore the templates.
-
-New files have no previous version to back up. Restore a template backup while
-its application is closed. Installation is not a transaction: if a later step
-fails, earlier package/configuration changes remain. Correct the reported
-problem and rerun; there is no automatic package removal or system rollback.
-
-## Updating the bundled projects
-
-Commit desired source changes first. From this central repository:
+To refresh the bundled chthm source, commit its desired source changes
+and run:
 
 ```sh
-python3 tools/sync_bundles.py \
-  --templates /path/to/template_config \
-  --chthm /path/to/chthm_py \
-  --dry-run
-
-python3 tools/sync_bundles.py \
-  --templates /path/to/template_config \
-  --chthm /path/to/chthm_py
+python3 tools/sync_bundles.py --chthm /path/to/chthm_py --dry-run
+python3 tools/sync_bundles.py --chthm /path/to/chthm_py
 ```
 
-The refresh reads committed tracked files, excludes Git metadata and caches,
-preserves the central `.xinitrc` adapter, retains license notices, and records
-source revisions in `bundles.json`. `--check` verifies synchronization without
-writing. An optional `--gotham PATH` replaces the bundled Gotham source when
-refreshing. No source checkouts are needed by people installing the published
-central repository.
+`--check` verifies that snapshot without writing. The refresh retains theme licenses,
+excludes Git metadata/caches, and records the source commit in `bundles.json`.
 
-## Development and validation
+## Backups and validation
+
+Template restoration skips identical files, preserves existing dotfile symlinks,
+and backs up changed files with `.template-backup-*` names. The session launcher
+uses `.chase-arch-backup-*`; chthm maintains its own backups. Every full or
+configuration-only reinstallation reapplies the selected defaults and reconnects
+chthm afterward. Installation is not transactional: completed package/file
+changes remain if a later step fails.
 
 ```sh
 python3 -m unittest discover -s tests -v
 bash -n install.sh
-sh -n configs/.xinitrc
-
-(cd configs && python3 -m unittest discover -s tests -v)
+sh -n session/xinitrc
 (cd vendor/chthm && PYTHONPATH=src python3 -m unittest discover -s tests -v)
 ```
 
-Tests cover prerequisite bootstrapping without Python, sudo/su selection,
-argument rejection before side effects, ordered setup, dry runs, isolated target
-homes, native profile discovery/locks, backups, executable session files,
-repeat runs and theme installation. The bundled projects retain their own tests.
-Real browser initialization and the configuration/chthm sequence can be checked
-in a disposable home with `--configs-only --home ... --offline-themes`.
-A full fresh-Arch VM installation is still required to validate package builds,
-login-manager startup, hardware and the interactive desktop together.
-
-## License and references
+Tests cover module selection, prerequisite handling, sudo/su behavior, isolated
+homes, selected browser profiles, template retrieval and component arguments,
+failure handling, backups and default theme integration. Repository tests use
+local Git fixtures and do not install system packages. Component ownership and
+selective-restoration tests live in `template_config` itself. A fresh Arch VM is
+still needed to validate the complete installed desktop.
 
 Original chase_arch material uses the [Zero-Clause BSD license](LICENSE).
-Bundled projects, themes, plugins and artwork retain their upstream terms;
-see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+Bundled chthm and themes retain their upstream terms; see
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
-- [Arch system maintenance and full upgrades](https://wiki.archlinux.org/title/System_maintenance)
-- [Arch User Repository](https://wiki.archlinux.org/title/Arch_User_Repository)
-- [LibreWolf installation on Arch](https://librewolf.net/installation/arch/)
-- [qt6ct in Arch Extra](https://archlinux.org/packages/extra/x86_64/qt6ct/)
-- [Ly service setup](https://github.com/fairyglade/ly#systemd)
+References: [Arch system maintenance](https://wiki.archlinux.org/title/System_maintenance),
+[AUR](https://wiki.archlinux.org/title/Arch_User_Repository),
+[Vim package variants](https://wiki.archlinux.org/title/Vim), and
+[Ly service setup](https://wiki.archlinux.org/title/Ly).
